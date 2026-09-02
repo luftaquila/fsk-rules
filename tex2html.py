@@ -1,942 +1,647 @@
 #!/usr/bin/env python3
-"""
-LaTeX to HTML converter with proper ref and cref resolution.
-Parses .aux file to resolve references, then converts to HTML.
-For pdflatex branch (formula.tex)
-"""
+"""Convert one KSAE rules LaTeX document to reader HTML and a clause index."""
 
+from __future__ import annotations
+
+import argparse
+import copy
+import hashlib
+import html
+import json
 import re
-import sys
 import subprocess
+import sys
+import tempfile
+import unicodedata
 from pathlib import Path
 
+from bs4 import BeautifulSoup, Tag
 
-def parse_nested_braces(s, start=0):
-    """Parse content within nested braces starting at position start."""
-    if start >= len(s) or s[start] != '{':
-        return None, start
 
+ROOT = Path(__file__).resolve().parent
+KOREAN_ORDER = tuple("가나다라마바사아자차카타파하")
+LITERAL_TILDE_TOKEN = "FSKASCIITILDE"
+
+
+def parse_nested_braces(source: str, start: int) -> tuple[str, int]:
+    if start >= len(source) or source[start] != "{":
+        raise ValueError("중괄호 블록 시작 위치가 올바르지 않습니다.")
     depth = 0
-    content_start = start + 1
-    i = start
-
-    while i < len(s):
-        if s[i] == '{':
+    for position in range(start, len(source)):
+        if source[position] == "{":
             depth += 1
-        elif s[i] == '}':
+        elif source[position] == "}":
             depth -= 1
             if depth == 0:
-                return s[content_start:i], i + 1
-        i += 1
-
-    return None, start
+                return source[start + 1 : position], position + 1
+    raise ValueError("닫히지 않은 LaTeX 중괄호 블록입니다.")
 
 
-def parse_aux_file(aux_path):
-    """Parse .aux file to extract label references."""
-    labels = {}
-
-    with open(aux_path, 'r', encoding='utf-8') as f:
-        content = f.read()
-
-    pos = 0
-    while True:
-        idx = content.find('\\newlabel{', pos)
-        if idx == -1:
+def parse_aux_file(path: Path) -> dict[str, str]:
+    """Read the first displayed value of each LaTeX label."""
+    if not path.exists():
+        return {}
+    source = path.read_text(encoding="utf-8", errors="replace")
+    labels: dict[str, str] = {}
+    position = 0
+    marker = r"\newlabel{"
+    while (start := source.find(marker, position)) >= 0:
+        name_start = start + len(marker)
+        name_end = source.find("}", name_start)
+        if name_end < 0:
             break
-
-        name_start = idx + len('\\newlabel{')
-        name_end = content.find('}', name_start)
-        if name_end == -1:
-            pos = idx + 1
+        name = source[name_start:name_end]
+        position = name_end + 1
+        if "@cref" in name or position >= len(source) or source[position] != "{":
             continue
-
-        label_name = content[name_start:name_end]
-
-        if '@cref' in label_name:
-            pos = name_end + 1
+        try:
+            outer, _ = parse_nested_braces(source, position)
+            value, _ = parse_nested_braces(outer, 0)
+        except ValueError:
             continue
-
-        first_brace = name_end + 1
-        if first_brace < len(content) and content[first_brace] == '{':
-            outer_content, next_pos = parse_nested_braces(content, first_brace)
-            if outer_content:
-                inner_content, _ = parse_nested_braces(outer_content, 0)
-                if inner_content:
-                    display = inner_content
-                    display = display.replace('{}', '')
-                    display = re.sub(r'\\relax\s*', '', display)
-                    display = display.replace('~', ' ')
-                    display = display.replace('{', '').replace('}', '')
-                    labels[label_name] = display.strip()
-
-        pos = name_end + 1
-
+        value = re.sub(r"\\relax\s*", "", value.replace("{}", ""))
+        labels[name] = value.replace("~", " ").replace("{", "").replace("}", "").strip()
     return labels
 
 
-def resolve_refs_in_tex(tex_content, labels):
-    """Replace ref, cref, Cref with resolved values as links."""
+def resolve_references(source: str, labels: dict[str, str]) -> str:
+    def reference(match: re.Match[str]) -> str:
+        command, label = match.groups()
+        value = labels.get(label, f"[{label}]")
+        if command.lower() in {"cref", "figref"}:
+            if label.startswith("fig:"):
+                value = f"그림 {value}"
+            elif label.startswith("section:"):
+                value = f"제{value}조"
+        anchor = label.replace(":", "-").replace(" ", "-")
+        return rf"\hyperlink{{{anchor}}}{{{value}}}"
 
-    def get_label_display(label):
-        if label in labels:
-            return labels[label]
-        return f'[{label}]'
-
-    def make_link(label, text):
-        anchor = label.replace(':', '-').replace(' ', '-')
-        return f'\\hyperlink{{{anchor}}}{{{text}}}'
-
-    def replace_cref(match):
-        label = match.group(1)
-        ref_text = get_label_display(label)
-
-        if label.startswith('fig:'):
-            display = f'그림 {ref_text}'
-        elif label.startswith('section:'):
-            display = f'제{ref_text}조'
-        elif label.startswith('item:'):
-            display = ref_text
-        elif label.startswith('chapter:'):
-            display = f'제{ref_text}장'
-        else:
-            display = ref_text
-
-        return make_link(label, display)
-
-    def replace_ref(match):
-        label = match.group(1)
-        return make_link(label, get_label_display(label))
-
-    tex_content = re.sub(r'\\figref\{([^}]+)\}', replace_cref, tex_content)
-    tex_content = re.sub(r'\\cref\{([^}]+)\}', replace_cref, tex_content)
-    tex_content = re.sub(r'\\Cref\{([^}]+)\}', replace_cref, tex_content)
-    tex_content = re.sub(r'\\ref\{([^}]+)\}', replace_ref, tex_content)
-    tex_content = re.sub(r'\\pageref\{([^}]+)\}', '', tex_content)
-
-    return tex_content
+    source = re.sub(r"\\(figref|[cC]ref|ref)\{([^}]+)\}", reference, source)
+    return re.sub(r"\\pageref\{[^}]+\}", "", source)
 
 
-def preprocess_tex_for_pandoc(tex_content):
-    """Preprocess LaTeX content for better pandoc compatibility."""
+def expand_deferred_competition_tail(source: str) -> str:
+    """Expand the long competition tail kept in a source-order helper macro."""
+    declaration = r"\newcommand{\CompetitionRulesTail}"
+    start = source.find(declaration)
+    if start < 0:
+        return source
+    body_start = start + len(declaration)
+    while body_start < len(source) and source[body_start].isspace():
+        body_start += 1
+    body, body_end = parse_nested_braces(source, body_start)
+    source = source[:start] + source[body_end:]
+    body = body.lstrip("%\r\n")
+    return source.replace(r"\CompetitionRulesTail", body, 1)
 
-    chapter_counter = 0
-    section_counter = 0
-    figure_counter = 0
 
-    # Remove input commands
-    tex_content = re.sub(r'\\input\{template\}', '', tex_content)
-    tex_content = re.sub(r'\\input\{template\.tex\}', '', tex_content)
+def strip_balanced_command(source: str, command: str) -> str:
+    """Remove a one-argument formatting command while preserving its contents."""
+    marker = rf"\{command}{{"
+    output: list[str] = []
+    position = 0
+    while (start := source.find(marker, position)) >= 0:
+        output.append(source[position:start])
+        brace = start + len(marker) - 1
+        try:
+            contents, end = parse_nested_braces(source, brace)
+        except ValueError:
+            break
+        output.append(contents)
+        position = end
+    output.append(source[position:])
+    return "".join(output)
 
-    # Remove page style commands
-    tex_content = re.sub(r'\\thispagestyle\{[^}]*\}', '', tex_content)
-    tex_content = re.sub(r'\\pagestyle\{[^}]*\}', '', tex_content)
 
-    # Remove CJK environment
-    tex_content = re.sub(r'\\begin\{CJK\}\{[^}]*\}\{[^}]*\}', '', tex_content)
-    tex_content = re.sub(r'\\end\{CJK\}', '', tex_content)
-
-    # Remove color commands (for diff markup)
-    # Handle {\color{blue}...} blocks that may span multiple lines
-    def remove_color_blocks(tex):
-        result = []
-        i = 0
-        while i < len(tex):
-            # Check for {\color{
-            if tex[i:i+8] == '{\\color{':
-                # Find the closing } of color argument
-                j = i + 8
-                while j < len(tex) and tex[j] != '}':
-                    j += 1
-                j += 1  # Skip the }
-
-                # Now we need to find the matching } for the outer {
-                depth = 1
-                content_start = j
-                while j < len(tex) and depth > 0:
-                    if tex[j] == '{':
-                        depth += 1
-                    elif tex[j] == '}':
-                        depth -= 1
-                    j += 1
-
-                # Extract content without the outer braces and color command
-                content = tex[content_start:j-1] if j > content_start else ''
-                result.append(content)
-                i = j
-                continue
-
-            result.append(tex[i])
-            i += 1
-
-        return ''.join(result)
-
-    tex_content = remove_color_blocks(tex_content)
-    # Handle \color{blue} without braces
-    tex_content = re.sub(r'[\\]color\{[^}]*\}', '', tex_content)
-
-    # Fix document header - combine title lines into one
-    tex_content = re.sub(
-        r'대학생 자작자동차대회\}\\\\.*?\n.*?Formula Student Korea 차량기술규정\}\\\\',
-        r'대학생 자작자동차대회 Formula Student Korea 차량기술규정}\\\\',
-        tex_content
-    )
-
-    # Convert \chapter{title}
-    def replace_chapter(match):
-        nonlocal chapter_counter
-        chapter_counter += 1
-        title = match.group(1)
-        return f'\\chapter{{제{chapter_counter}장 {title}}}'
-
-    tex_content = re.sub(r'\\chapter\{([^}]+)\}', replace_chapter, tex_content)
-
-    # Convert \section{title}
-    def replace_section(match):
-        nonlocal section_counter
-        section_counter += 1
-        title = match.group(1)
-        return f'\\section{{제{section_counter}조 ({title})}}'
-
-    tex_content = re.sub(r'\\section\{([^}]+)\}', replace_section, tex_content)
-
-    # Convert \fig{caption}{folder}{width}
-    def replace_fig(match):
-        nonlocal figure_counter
-        figure_counter += 1
-        caption = match.group(1)
-        folder = match.group(2)
-        width = match.group(3)
-        anchor = f'fig-{caption}'.replace(' ', '-')
-
-        return f'''\\begin{{figure}}[H]
-\\hypertarget{{{anchor}}}{{}}
-\\centering
-\\includegraphics[width={width}\\linewidth]{{assets/{folder}/{caption}.jpg}}
-\\caption{{그림 {figure_counter}. {caption}}}
-\\end{{figure}}'''
-
-    tex_content = re.sub(r'\\fig\{([^}]+)\}\{([^}]+)\}\{([^}]+)\}', replace_fig, tex_content)
-
-    # Remove fontsize commands
-    tex_content = re.sub(r'\\fontsize\{[^}]*\}\{[^}]*\}\\selectfont\s*', '', tex_content)
-    tex_content = re.sub(r'\\fontsize\{[^}]*\}\{[^}]*\}\s*', '', tex_content)
-
-    # Handle \string[...] - remove \string
-    tex_content = re.sub(r'\\string\[', '[', tex_content)
-    tex_content = re.sub(r'\\string\]', ']', tex_content)
-
-    # Convert \label to anchor
-    def replace_label(match):
-        label = match.group(1)
-        anchor = label.replace(':', '-').replace(' ', '-')
-        return f'\\hypertarget{{{anchor}}}{{}}'
-
-    tex_content = re.sub(r'\\label\{([^}]+)\}', replace_label, tex_content)
-
-    # Convert tblr environment to simple tabular
-    def convert_tblr_env(tex):
-        result = []
-        i = 0
-        while i < len(tex):
-            # Find \begin{tblr}
-            start = tex.find('\\begin{tblr}', i)
-            if start == -1:
-                result.append(tex[i:])
+def strip_color_groups(source: str) -> str:
+    r"""Remove ``{\color{name} ...}`` wrappers, including wrappers around list items."""
+    marker = r"{\color{"
+    while marker in source:
+        output: list[str] = []
+        position = 0
+        changed = False
+        while (start := source.find(marker, position)) >= 0:
+            output.append(source[position:start])
+            color_brace = start + len(r"{\color")
+            try:
+                _, color_end = parse_nested_braces(source, color_brace)
+                _, group_end = parse_nested_braces(source, start)
+            except ValueError:
+                output.append(source[start:])
+                position = len(source)
                 break
-
-            result.append(tex[i:start])
-
-            # Find the matching \end{tblr}
-            end_tag = '\\end{tblr}'
-            end = tex.find(end_tag, start)
-            if end == -1:
-                result.append(tex[start:])
-                break
-
-            tblr_content = tex[start:end + len(end_tag)]
-
-            # Extract content between options and \end{tblr}
-            # Find where options end (after the first set of nested braces)
-            brace_start = tblr_content.find('{', len('\\begin{tblr}'))
-            if brace_start != -1:
-                depth = 0
-                options_end = brace_start
-                for j in range(brace_start, len(tblr_content)):
-                    if tblr_content[j] == '{':
-                        depth += 1
-                    elif tblr_content[j] == '}':
-                        depth -= 1
-                        if depth == 0:
-                            options_end = j + 1
-                            break
-
-                table_content = tblr_content[options_end:tblr_content.rfind('\\end{tblr}')]
-            else:
-                table_content = ''
-
-            # Clean up table content
-            table_content = re.sub(r'\\SetCell\[[^\]]*\]\{[^}]*\}\s*', '', table_content)
-            table_content = table_content.strip()
-
-            # Count columns
-            if table_content:
-                first_row = table_content.split('\\\\')[0]
-                num_cols = first_row.count('&') + 1
-                colspec = '|' + 'c|' * num_cols
-
-                # Convert to tabular
-                converted = f'\\begin{{tabular}}{{{colspec}}}\n\\hline\n{table_content}\n\\hline\n\\end{{tabular}}'
-                result.append(converted)
-            else:
-                result.append('')
-
-            i = end + len(end_tag)
-
-        return ''.join(result)
-
-    tex_content = convert_tblr_env(tex_content)
-
-    # Remove footnotesize and other size commands
-    # Handle {\footnotesize ... } blocks by removing outer braces while preserving content
-    def remove_footnotesize_block(tex):
-        result = []
-        i = 0
-
-        while i < len(tex):
-            # Check for {\footnotesize
-            if tex[i:i+14] == '{\\footnotesize':
-                # Find the end of this pattern
-                j = i + 14
-                while j < len(tex) and tex[j] in ' \t\n':
-                    j += 1
-
-                # Now find the matching } for the outer { by tracking depth
-                depth = 1
-                content_start = j
-                while j < len(tex) and depth > 0:
-                    if tex[j] == '{':
-                        depth += 1
-                    elif tex[j] == '}':
-                        depth -= 1
-                    j += 1
-
-                # Extract content without outer braces and \footnotesize
-                content = tex[content_start:j-1] if j > content_start else ''
-                result.append(content)
-                i = j
-                continue
-
-            result.append(tex[i])
-            i += 1
-
-        return ''.join(result)
-
-    tex_content = remove_footnotesize_block(tex_content)
-    tex_content = re.sub(r'\\footnotesize\s*', '', tex_content)
-
-    # Remove any lone closing braces on their own line (cleanup)
-    tex_content = re.sub(r'\n\s*\}\s*\n', '\n', tex_content)
-
-    return tex_content
+            output.append(source[color_end : group_end - 1])
+            position = group_end
+            changed = True
+        output.append(source[position:])
+        source = "".join(output)
+        if not changed:
+            break
+    return source
 
 
-def add_heading_ids(html_content):
-    """Add IDs to h1 and h2 tags for TOC navigation."""
-    heading_counter = {'h1': 0, 'h2': 0}
-
-    def add_id(match):
-        tag = match.group(1)
-        attrs = match.group(2) or ''
-        content = match.group(3)
-
-        # Skip if already has id
-        if 'id="' in attrs:
-            return match.group(0)
-
-        heading_counter[tag] += 1
-        # Create slug from content
-        slug = re.sub(r'[^\w\s가-힣-]', '', content)
-        slug = re.sub(r'\s+', '-', slug.strip())
-        heading_id = f'{tag}-{heading_counter[tag]}-{slug[:30]}'
-
-        if attrs:
-            return f'<{tag} {attrs} id="{heading_id}">{content}</{tag}>'
-        else:
-            return f'<{tag} id="{heading_id}">{content}</{tag}>'
-
-    html_content = re.sub(r'<(h1|h2)([^>]*)>([^<]+)</\1>', add_id, html_content)
-    return html_content
-
-
-def generate_toc(html_content):
-    """Generate table of contents from h1 and h2 tags."""
-    toc_items = []
-
-    # Find all h1 (chapters) and h2 (sections) tags with id
-    heading_pattern = re.compile(r'<(h1|h2)[^>]*id="([^"]*)"[^>]*>([^<]*)</\1>')
-
-    for match in heading_pattern.finditer(html_content):
-        level = match.group(1)
-        heading_id = match.group(2)
-        text = match.group(3).strip()
-
-        if level == 'h1':
-            toc_items.append(f'<a href="#{heading_id}" class="toc-chapter">{text}</a>')
-        else:
-            toc_items.append(f'<a href="#{heading_id}" class="toc-section">{text}</a>')
-
-    return '\n      '.join(toc_items)
+def convert_tblr(source: str) -> str:
+    """Reduce tabularray tables to syntax Pandoc can consume."""
+    begin = r"\begin{tblr}"
+    end_marker = r"\end{tblr}"
+    output: list[str] = []
+    position = 0
+    while (start := source.find(begin, position)) >= 0:
+        output.append(source[position:start])
+        options_start = source.find("{", start + len(begin))
+        end = source.find(end_marker, options_start)
+        if options_start < 0 or end < 0:
+            output.append(source[start:])
+            return "".join(output)
+        _, content_start = parse_nested_braces(source, options_start)
+        contents = source[content_start:end]
+        contents = re.sub(r"\\SetCell(?:\[[^]]*\])?\{[^}]*\}\s*", "", contents)
+        rows = [row.strip() for row in re.split(r"\\\\", contents) if row.strip()]
+        columns = max((len(re.findall(r"(?<!\\)&", row)) + 1 for row in rows), default=1)
+        table_body = (" " + r"\\" + "\n").join(rows)
+        output.append(
+            "\\begin{tabular}{" + "|" + "l|" * columns + "}\n\\hline\n"
+            + table_body
+            + " " + r"\\" + "\n\\hline\n\\end{tabular}"
+        )
+        position = end + len(end_marker)
+    output.append(source[position:])
+    return "".join(output)
 
 
-def postprocess_html(html_content):
-    """Post-process the HTML output for better formatting."""
+def preprocess_tex(source: str) -> str:
+    source = expand_deferred_competition_tail(source)
+    begin = source.find(r"\begin{document}")
+    end = source.rfind(r"\end{document}")
+    if begin >= 0:
+        source = source[begin + len(r"\begin{document}") : end if end >= 0 else None]
 
-    def convert_hyperlink(match):
-        target = match.group(1)
-        text = match.group(2)
-        return f'<a href="#{target}" class="ref-link">{text}</a>'
+    for command in ("DIFadd", "textb", "pretendard", "pretendardb", "uline"):
+        source = strip_balanced_command(source, command)
+    source = strip_color_groups(source)
+    source = re.sub(r"\\(?:DIFdel|color)\{[^}]*\}", "", source)
+    source = re.sub(r"\\(?:this)?pagestyle\{[^}]*\}", "", source)
+    source = re.sub(r"\\(?:fontsize\{[^}]*\}\{[^}]*\}|addfontfeatures\{[^}]*\}|selectfont|clearpage)", "", source)
+    source = source.replace(r"\RuleIndexStart", "")
+    source = source.replace(r"\RuleIndexEnd", r"\hypertarget{rules-index-end}{}")
+    # Pandoc treats LaTeX's ``\string~`` as spacing and drops the visible
+    # range marker. Keep a plain-text sentinel through the LaTeX reader and
+    # restore the literal character after conversion.
+    source = source.replace(r"\string~", LITERAL_TILDE_TOKEN)
+    source = source.replace(r"\string[", "[").replace(r"\string]", "]")
+    source = source.replace("㎠", "cm²").replace("㎟", "mm²")
 
-    html_content = re.sub(
-        r'\\hyperlink\{([^}]+)\}\{([^}]+)\}',
-        convert_hyperlink,
-        html_content
+    chapter = 0
+    article = 0
+
+    def number_chapter(match: re.Match[str]) -> str:
+        nonlocal chapter
+        chapter += 1
+        return rf"\chapter{{제{chapter}장 {match.group(1)}}}"
+
+    def number_article(match: re.Match[str]) -> str:
+        nonlocal article
+        article += 1
+        return rf"\section{{제{article}조 ({match.group(1)})}}"
+
+    source = re.sub(r"\\chapter\{([^{}]+)\}", number_chapter, source)
+    source = re.sub(r"\\section\{([^{}]+)\}", number_article, source)
+
+    figure = 0
+
+    def convert_figure(match: re.Match[str]) -> str:
+        nonlocal figure
+        figure += 1
+        caption, _folder, width = match.groups()
+        target = "fig-" + caption.replace(" ", "-")
+        return (
+            rf"\begin{{figure}}[H]\hypertarget{{{target}}}{{}}\centering "
+            rf"\includegraphics[width={width}\linewidth]{{assets/{caption}.jpg}}"
+            rf"\caption{{그림 {figure}. {caption}}}\end{{figure}}"
+        )
+
+    source = re.sub(r"\\fig\{([^}]+)\}\{([^}]+)\}\{([^}]+)\}", convert_figure, source)
+    source = re.sub(
+        r"\\label\{([^}]+)\}",
+        lambda match: rf"\hypertarget{{{match.group(1).replace(':', '-').replace(' ', '-')}}}{{}}",
+        source,
+    )
+    source = convert_tblr(source)
+    source = re.sub(r"\\chapter\*\{([^}]+)\}", lambda match: rf"\chapter{{{match.group(1)}}}", source)
+    return source
+
+
+def run_pandoc(source: str) -> str:
+    with tempfile.TemporaryDirectory(prefix="fsk-rules-") as directory:
+        input_path = Path(directory) / "rules.tex"
+        input_path.write_text(source, encoding="utf-8")
+        command = [
+            "pandoc",
+            "--from=latex+raw_tex",
+            "--to=html5",
+            # Native MathML keeps ordinary parenthesized text out of the math
+            # renderer and does not depend on a third-party runtime script.
+            # --mathml is supported by both Pandoc 2.x and 3.x.
+            "--mathml",
+            "--wrap=none",
+            str(input_path),
+        ]
+        try:
+            result = subprocess.run(command, check=True, capture_output=True, text=True)
+        except FileNotFoundError as error:
+            raise SystemExit("pandoc가 필요합니다. pandoc를 설치한 뒤 다시 빌드하세요.") from error
+        except subprocess.CalledProcessError as error:
+            raise SystemExit(f"pandoc 변환 실패:\n{error.stderr}") from error
+        if result.stderr.strip():
+            print(result.stderr, file=sys.stderr, end="")
+        return result.stdout.replace(LITERAL_TILDE_TOKEN, "~")
+
+
+def normalize_text(value: str) -> str:
+    return re.sub(r"\s+", " ", unicodedata.normalize("NFC", value)).strip()
+
+
+def canonical_node_text(element: Tag) -> str:
+    clone = copy.copy(element)
+    for button in clone.select("button.anchor-copy"):
+        button.decompose()
+    for link in clone.select("a[href^='#']"):
+        link.clear()
+        link.append(f"[ref:{link.get('href')}]")
+    return normalize_text(clone.get_text(" ", strip=True))
+
+
+def canonical_content(element: Tag, asset_dir: Path | None = None) -> tuple[str, str]:
+    text = normalize_text(element.get_text(" ", strip=True))
+    canonical_text = canonical_node_text(element)
+    image_parts: list[str] = []
+    if asset_dir:
+        for image in element.select("img[src]"):
+            filename = Path(image["src"]).name
+            image_path = asset_dir / filename
+            if image_path.exists():
+                digest = hashlib.sha256(image_path.read_bytes()).hexdigest()
+                image_parts.append(f"image:sha256:{digest}")
+    canonical = "\n".join([canonical_text, *image_parts]).strip()
+    digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    return text, f"sha256:{digest}"
+
+
+def canonical_article(heading: Tag, asset_dir: Path | None = None) -> tuple[str, str]:
+    """Hash an article heading together with all of its normative body."""
+    nodes: list[Tag] = [heading]
+    for sibling in heading.next_siblings:
+        if isinstance(sibling, Tag) and sibling.name in {"h1", "h2"}:
+            break
+        if isinstance(sibling, Tag) and sibling.get("id") == "rules-index-end":
+            break
+        if isinstance(sibling, Tag):
+            nodes.append(sibling)
+    text = normalize_text(" ".join(node.get_text(" ", strip=True) for node in nodes))
+    text_parts = [canonical_node_text(node) for node in nodes]
+    image_parts: list[str] = []
+    if asset_dir:
+        for node in nodes:
+            for image in node.select("img[src]"):
+                filename = Path(image["src"]).name
+                image_path = asset_dir / filename
+                if image_path.exists():
+                    image_parts.append(f"image:sha256:{hashlib.sha256(image_path.read_bytes()).hexdigest()}")
+    canonical = "\n".join([*text_parts, *image_parts]).strip()
+    digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    return text, f"sha256:{digest}"
+
+
+def set_machine_heading_id(soup: BeautifulSoup, heading: Tag, machine_id: str) -> None:
+    previous = str(heading.get("id")) if heading.get("id") else None
+    matches = soup.find_all(id=previous) if previous else []
+    if previous and previous != machine_id and all(match is heading for match in matches):
+        alias = soup.new_tag("span", id=previous)
+        alias["class"] = ["legacy-anchor"]
+        heading.insert_before(alias)
+    heading["id"] = machine_id
+    heading["data-clause-id"] = machine_id
+
+
+def subsection_letter(number: int) -> str:
+    return KOREAN_ORDER[number - 1] if 0 < number <= len(KOREAN_ORDER) else str(number)
+
+
+def path_citation(article: int, path: tuple[int, ...]) -> str:
+    citation = f"제{article}조"
+    if len(path) >= 1:
+        citation += f" {path[0]}항"
+    if len(path) >= 2:
+        citation += f" {path[1]}호"
+    if len(path) >= 3:
+        citation += f" {subsection_letter(path[2])}목"
+    if len(path) >= 4:
+        citation += " " + "-".join(str(value) for value in path[3:])
+    return citation
+
+
+def path_id(document: str, article: int, path: tuple[int, ...]) -> str:
+    components = [document, str(article)]
+    for number in path:
+        components.append(str(number))
+    return "-".join(components)
+
+
+def iter_direct_ordered_lists(heading: Tag):
+    for sibling in heading.next_siblings:
+        if isinstance(sibling, Tag) and sibling.name in {"h1", "h2"}:
+            return
+        if isinstance(sibling, Tag) and sibling.get("id") == "rules-index-end":
+            return
+        if isinstance(sibling, Tag) and sibling.name == "ol":
+            yield sibling
+
+
+def append_list_entry(
+    item: Tag,
+    document: str,
+    edition: int,
+    article: int,
+    path: tuple[int, ...],
+    entries: list[dict],
+    seen: set[str],
+    asset_dir: Path | None,
+) -> None:
+    machine_id = path_id(document, article, path)
+    if machine_id in seen:
+        raise ValueError(f"중복 조항 ID: {machine_id}")
+    seen.add(machine_id)
+    item["id"] = machine_id
+    item["data-clause-id"] = machine_id
+    text, digest = canonical_content(item, asset_dir)
+    entries.append(
+        {
+            "id": machine_id,
+            "year": edition,
+            "edition": edition,
+            "document": document,
+            "citation": path_citation(article, path),
+            "text": text,
+            "href": f"#{machine_id}",
+            "content_hash": digest,
+        }
+    )
+    for child in item.find_all("ol", recursive=False):
+        for number, nested_item in enumerate(child.find_all("li", recursive=False), start=1):
+            append_list_entry(nested_item, document, edition, article, path + (number,), entries, seen, asset_dir)
+
+
+def is_before(node: Tag, target: Tag) -> bool:
+    return any(candidate is target for candidate in node.next_elements)
+
+
+def annotate_rules(
+    fragment: str,
+    edition: int,
+    document: str,
+    asset_dir: Path | None = None,
+) -> tuple[BeautifulSoup, list[dict]]:
+    soup = BeautifulSoup(fragment, "html.parser")
+    entries: list[dict] = []
+    seen: set[str] = set()
+    chapter = 0
+    article = 0
+    index_end = soup.find(id="rules-index-end")
+
+    for heading in soup.find_all(["h1", "h2"]):
+        normative = index_end is None or is_before(heading, index_end)
+        if heading.name == "h1":
+            chapter += 1
+            set_machine_heading_id(soup, heading, f"{document}-chapter-{chapter}")
+            continue
+        if not normative:
+            continue
+        article += 1
+        machine_id = f"{document}-{article}"
+        if machine_id in seen:
+            raise ValueError(f"중복 조항 ID: {machine_id}")
+        seen.add(machine_id)
+        set_machine_heading_id(soup, heading, machine_id)
+        text, digest = canonical_article(heading, asset_dir)
+        entries.append(
+            {
+                "id": machine_id,
+                "year": edition,
+                "edition": edition,
+                "document": document,
+                "citation": f"제{article}조",
+                "text": text,
+                "href": f"#{machine_id}",
+                "content_hash": digest,
+            }
+        )
+        top_number = 0
+        for ordered_list in iter_direct_ordered_lists(heading):
+            for item in ordered_list.find_all("li", recursive=False):
+                top_number += 1
+                append_list_entry(item, document, edition, article, (top_number,), entries, seen, asset_dir)
+    return soup, entries
+
+
+def apply_figure_widths(soup: BeautifulSoup, source: str) -> None:
+    r"""Apply ``\fig`` widths independently of the installed Pandoc version."""
+    for match in re.finditer(r"\\fig\{([^}]+)\}\{[^}]+\}\{([^}]+)\}", source):
+        caption, raw_width = match.groups()
+        try:
+            percentage = float(raw_width) * 100
+        except ValueError:
+            continue
+        if not 0 < percentage <= 100:
+            continue
+        image = soup.find("img", src=f"assets/{caption}.jpg")
+        if image is not None:
+            image["style"] = f"width:{percentage:g}%"
+
+
+def resolve_html_reference_labels(soup: BeautifulSoup, rules: list[dict]) -> bool:
+    """Normalize reference labels from the annotated clause structure."""
+    citations = {rule["id"]: rule["citation"] for rule in rules}
+    changed = False
+    for link in soup.select("a[href^='#']"):
+        anchor = str(link.get("href", ""))[1:]
+        target = soup.find(id=anchor)
+        citation = None
+        if target is not None and anchor.startswith("fig-"):
+            figure = target.find_parent("figure")
+            caption = figure.find("figcaption") if figure else None
+            match = re.search(r"그림\s+\d+", caption.get_text(" ", strip=True) if caption else "")
+            citation = match.group(0) if match else None
+        elif target is not None:
+            clause = target if target.get("data-clause-id") else target.find_parent(attrs={"data-clause-id": True})
+            if clause is None:
+                clause = target.find_previous(["h1", "h2"])
+            clause_id = str(clause.get("data-clause-id", "")) if clause else ""
+            citation = citations.get(clause_id)
+            if citation is None and clause is not None and clause.name == "h1":
+                match = re.search(r"제\d+장", clause.get_text(" ", strip=True))
+                citation = match.group(0) if match else None
+            if citation and anchor.startswith("item-"):
+                # LaTeX's item references read as "4번" in prose, while the
+                # machine-readable citation intentionally keeps "4호".
+                citation = re.sub(r"(\d+)호$", r"\1번", citation)
+        if citation and link.get_text(" ", strip=True) != citation:
+            link.string = citation
+            changed = True
+    return changed
+
+
+def unresolved_reference_labels(soup: BeautifulSoup) -> list[str]:
+    return sorted(
+        {
+            match.group(0)
+            for link in soup.select("a[href^='#']")
+            for match in re.finditer(r"\[[^\]]+:[^\]]+\]", link.get_text(" ", strip=True))
+        }
     )
 
-    def convert_hypertarget(match):
-        target = match.group(1)
-        return f'<span id="{target}"></span>'
 
-    html_content = re.sub(
-        r'\\hypertarget\{([^}]+)\}\{\}',
-        convert_hypertarget,
-        html_content
+def broken_internal_references(soup: BeautifulSoup) -> list[str]:
+    return sorted(
+        {
+            str(link.get("href", ""))
+            for link in soup.select("a[href^='#']")
+            if str(link.get("href", "")) != "#" and soup.find(id=str(link.get("href", ""))[1:]) is None
+        }
     )
 
-    html_content = html_content.replace('\\%', '%')
-    html_content = html_content.replace('\\&', '&amp;')
-    html_content = html_content.replace('\\$', '$')
 
-    # Add IDs to headings for TOC navigation
-    html_content = add_heading_ids(html_content)
+def toc_html(soup: BeautifulSoup) -> str:
+    links: list[str] = []
+    for heading in soup.find_all(["h1", "h2"]):
+        identifier = heading.get("id")
+        if not identifier:
+            continue
+        class_name = "toc-chapter" if heading.name == "h1" else "toc-article"
+        links.append(
+            f'<a class="{class_name}" href="#{html.escape(str(identifier))}">'
+            f"{html.escape(normalize_text(heading.get_text(' ', strip=True)))}</a>"
+        )
+    return "\n".join(links)
 
-    # Generate and inject TOC
-    toc_html = generate_toc(html_content)
-    html_content = html_content.replace('<!-- TOC_PLACEHOLDER -->', toc_html)
 
-    return html_content
-
-
-def create_pandoc_template():
-    """Create a custom pandoc HTML template."""
-    return '''<!DOCTYPE html>
+def render_document(
+    soup: BeautifulSoup,
+    title: str,
+    edition: int,
+    document: str,
+    pdf_filename: str,
+) -> str:
+    config = json.dumps(
+        {"edition": edition, "document": document, "pdf": pdf_filename}, ensure_ascii=False
+    ).replace("</", "<\\/")
+    return f"""<!doctype html>
 <html lang="ko">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>$title$</title>
-  <link rel="stylesheet" href="style.css">
-  <script>
-    MathJax = {
-      tex: {
-        inlineMath: [['$$', '$$'], ['\\\\(', '\\\\)']],
-        displayMath: [['\\\\[', '\\\\]']]
-      }
-    };
-  </script>
-  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="{html.escape(title)} {edition} 웹 규정집">
+  <title>{html.escape(str(edition))} {html.escape(title)}</title>
+  <link rel="stylesheet" href="../../style.css">
+  <script defer src="../../viewer.js"></script>
 </head>
-<body>
-  <nav id="toc">
-    <div class="toc-header">
-      <button id="toc-close" aria-label="Close TOC">✕</button>
-      <span>목차</span>
+<body class="reader-page">
+  <a class="skip-link" href="#rules-content">본문으로 건너뛰기</a>
+  <header class="reader-toolbar">
+    <button class="icon-button" id="toc-toggle" type="button" aria-label="목차" title="목차" aria-controls="toc" aria-expanded="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+    </button>
+    <a class="brand" href="../../?choose=1" aria-label="규정 선택">FSK Rules</a>
+    <div class="document-selectors">
+      <label><span>연도</span><select id="edition-select" aria-label="연도 선택"></select></label>
+      <label><span>문서</span><select id="document-select" aria-label="문서 선택"></select></label>
     </div>
-    <div class="toc-content">
-      <!-- TOC_PLACEHOLDER -->
-    </div>
-  </nav>
-  <button id="toc-toggle" aria-label="Toggle TOC">☰</button>
-  <button id="theme-toggle" aria-label="Toggle Dark Mode">🌙</button>
-  <button id="share-selection">🔗 링크 복사</button>
-  <button id="back-to-position" aria-label="Go back to previous position">↩ 이전 위치</button>
-  <main id="content">
-$body$
+    <a class="toolbar-link" href="{html.escape(pdf_filename)}" target="_blank" rel="noopener">PDF</a>
+    <button class="icon-button" id="theme-toggle" type="button" aria-label="어두운 테마로 전환" title="어두운 테마로 전환">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.2 15.3A8.5 8.5 0 0 1 8.7 3.8 8.5 8.5 0 1 0 20.2 15.3Z"/></svg>
+    </button>
+  </header>
+  <aside id="toc" class="toc-panel" aria-label="문서 목차">
+    <div class="toc-title"><strong>목차</strong><button id="toc-close" type="button" aria-label="목차 닫기">×</button></div>
+    <nav>{toc_html(soup)}</nav>
+  </aside>
+  <main id="rules-content" class="rules-content">
+    {str(soup)}
   </main>
-  <script>
-    // TOC Toggle
-    const tocToggle = document.getElementById('toc-toggle');
-    const tocClose = document.getElementById('toc-close');
-    const toc = document.getElementById('toc');
-    
-    tocToggle.addEventListener('click', () => {
-      toc.classList.add('open');
-    });
-    
-    tocClose.addEventListener('click', () => {
-      toc.classList.remove('open');
-    });
-    
-    // Close TOC when clicking a link on mobile
-    toc.querySelectorAll('a').forEach(link => {
-      link.addEventListener('click', () => {
-        if (window.innerWidth <= 1024) {
-          toc.classList.remove('open');
-        }
-      });
-    });
-
-    // TOC active section highlighting
-    const tocLinks = toc.querySelectorAll('a[href^="#"]');
-    const headings = [];
-
-    tocLinks.forEach(link => {
-      const id = link.getAttribute('href').slice(1);
-      const heading = document.getElementById(id);
-      if (heading) {
-        headings.push({ id, element: heading, link });
-      }
-    });
-
-    function updateActiveTocItem() {
-      const scrollPos = window.scrollY + 100;
-
-      let activeHeading = null;
-      for (const h of headings) {
-        if (h.element.offsetTop <= scrollPos) {
-          activeHeading = h;
-        } else {
-          break;
-        }
-      }
-
-      tocLinks.forEach(link => link.classList.remove('active'));
-      if (activeHeading) {
-        activeHeading.link.classList.add('active');
-      }
-    }
-
-    window.addEventListener('scroll', updateActiveTocItem);
-    updateActiveTocItem();
-
-    // Dark Mode Toggle
-    const themeToggle = document.getElementById('theme-toggle');
-    const html = document.documentElement;
-
-    // Check saved preference or system preference
-    const savedTheme = localStorage.getItem('theme');
-    const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-
-    if (savedTheme === 'dark' || (!savedTheme && systemDark)) {
-      html.setAttribute('data-theme', 'dark');
-      themeToggle.textContent = '☀️';
-    }
-
-    themeToggle.addEventListener('click', () => {
-      const isDark = html.getAttribute('data-theme') === 'dark';
-      if (isDark) {
-        html.removeAttribute('data-theme');
-        localStorage.setItem('theme', 'light');
-        themeToggle.textContent = '🌙';
-      } else {
-        html.setAttribute('data-theme', 'dark');
-        localStorage.setItem('theme', 'dark');
-        themeToggle.textContent = '☀️';
-      }
-    });
-
-    // Text Selection Share Link
-    const shareBtn = document.getElementById('share-selection');
-    let selectedText = '';
-    let selectionTimeout = null;
-    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-
-    function positionShareButton(rect) {
-      const btnWidth = shareBtn.offsetWidth || 100;
-      const btnHeight = 36;
-      const padding = 10;
-
-      let left, top;
-
-      if (isMobile) {
-        // Mobile: below selection (system menu appears above)
-        left = rect.left + window.scrollX + rect.width / 2 - btnWidth / 2;
-        top = rect.bottom + window.scrollY + 10;
-      } else {
-        // Desktop: above selection
-        left = rect.left + window.scrollX + rect.width / 2 - btnWidth / 2;
-        top = rect.top + window.scrollY - 40;
-      }
-
-      // Clamp to viewport (keep button visible)
-      const maxLeft = window.scrollX + window.innerWidth - btnWidth - padding;
-      const minLeft = window.scrollX + padding;
-      left = Math.max(minLeft, Math.min(maxLeft, left));
-
-      shareBtn.style.transform = 'none';
-      shareBtn.style.left = left + 'px';
-      shareBtn.style.top = top + 'px';
-    }
-
-    function handleSelection() {
-      clearTimeout(selectionTimeout);
-      selectionTimeout = setTimeout(() => {
-        const selection = window.getSelection();
-        const text = selection.toString().trim();
-
-        if (text.length > 3 && text.length < 200) {
-          selectedText = text;
-          try {
-            const range = selection.getRangeAt(0);
-            const rect = range.getBoundingClientRect();
-
-            shareBtn.style.display = 'block';
-            shareBtn.textContent = '🔗 링크 복사';
-            shareBtn.classList.remove('copied');
-            positionShareButton(rect);
-          } catch (e) {
-            shareBtn.style.display = 'none';
-          }
-        } else {
-          shareBtn.style.display = 'none';
-        }
-      }, 10);
-    }
-
-    // Desktop: mouseup
-    document.addEventListener('mouseup', handleSelection);
-
-    // Mobile: selectionchange (for touch selection)
-    document.addEventListener('selectionchange', () => {
-      clearTimeout(selectionTimeout);
-      selectionTimeout = setTimeout(() => {
-        const selection = window.getSelection();
-        const text = selection.toString().trim();
-
-        if (text.length > 3 && text.length < 200) {
-          selectedText = text;
-          try {
-            const range = selection.getRangeAt(0);
-            const rect = range.getBoundingClientRect();
-
-            shareBtn.style.display = 'block';
-            shareBtn.textContent = '🔗 링크 복사';
-            shareBtn.classList.remove('copied');
-            positionShareButton(rect);
-          } catch (e) {
-            // Ignore errors
-          }
-        } else if (text.length === 0) {
-          // Only hide when selection is completely cleared
-          shareBtn.style.display = 'none';
-        }
-      }, 200);
-    });
-
-    document.addEventListener('mousedown', (e) => {
-      if (e.target !== shareBtn) {
-        shareBtn.style.display = 'none';
-      }
-    });
-
-    // Mobile: don't hide on touchstart (allows scrolling with button visible)
-    // Button hides when selection is cleared via selectionchange
-
-    shareBtn.addEventListener('click', async () => {
-      if (!selectedText) return;
-
-      // Create URL with query parameter for text highlight
-      const baseUrl = window.location.href.split('?')[0].split('#')[0];
-
-      // Get context (prefix/suffix) for precise matching
-      const selection = window.getSelection();
-      let prefix = '';
-      let suffix = '';
-
-      if (selection.rangeCount > 0) {
-        const range = selection.getRangeAt(0);
-        const container = range.commonAncestorContainer;
-
-        if (container.nodeType === Node.TEXT_NODE) {
-          const fullText = container.textContent || '';
-          const startOffset = range.startOffset;
-          const endOffset = range.endOffset;
-
-          // Extract prefix (up to 30 chars before selection)
-          const prefixStart = Math.max(0, startOffset - 30);
-          prefix = fullText.substring(prefixStart, startOffset);
-
-          // Extract suffix (up to 30 chars after selection)
-          const suffixEnd = Math.min(fullText.length, endOffset + 30);
-          suffix = fullText.substring(endOffset, suffixEnd);
-        }
-      }
-
-      // Use start/end markers to reduce URL length while highlighting full text
-      const startMarker = selectedText.substring(0, 15);
-      const endMarker = selectedText.length > 15 ? selectedText.slice(-15) : '';
-
-      let url = baseUrl + '?a=' + encodeURIComponent(startMarker);
-      if (endMarker && endMarker !== startMarker) url += '&b=' + encodeURIComponent(endMarker);
-      if (prefix) url += '&p=' + encodeURIComponent(prefix.slice(-10));
-      if (suffix) url += '&s=' + encodeURIComponent(suffix.slice(0, 10));
-
-      try {
-        await navigator.clipboard.writeText(url);
-        shareBtn.textContent = '✓ 복사됨';
-        shareBtn.classList.add('copied');
-        selectedText = '';
-        window.getSelection().removeAllRanges();
-        setTimeout(() => {
-          shareBtn.style.display = 'none';
-        }, 1500);
-      } catch (err) {
-        // Fallback for older browsers
-        const textarea = document.createElement('textarea');
-        textarea.value = url;
-        document.body.appendChild(textarea);
-        textarea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textarea);
-        shareBtn.textContent = '✓ 복사됨';
-        shareBtn.classList.add('copied');
-        selectedText = '';
-        window.getSelection().removeAllRanges();
-        setTimeout(() => {
-          shareBtn.style.display = 'none';
-        }, 1500);
-      }
-    });
-
-    // Back to Previous Position
-    const backBtn = document.getElementById('back-to-position');
-    let previousScrollPosition = null;
-    let backButtonTimeout = null;
-    let backButtonShownAt = null;
-
-    // Track clicks on internal links
-    document.addEventListener('click', (e) => {
-      const link = e.target.closest('a[href^="#"]');
-      if (link) {
-        // Save current scroll position before navigation
-        previousScrollPosition = window.scrollY;
-
-        // Show back button after navigation
-        setTimeout(() => {
-          showBackButton();
-        }, 100);
-      }
-    });
-
-    function showBackButton() {
-      if (previousScrollPosition !== null) {
-        backBtn.style.display = 'flex';
-        backBtn.classList.add('visible');
-        backButtonShownAt = Date.now();
-
-        // Auto-hide after 20 seconds
-        clearTimeout(backButtonTimeout);
-        backButtonTimeout = setTimeout(() => {
-          hideBackButton();
-        }, 20000);
-      }
-    }
-
-    function hideBackButton() {
-      backBtn.classList.remove('visible');
-      setTimeout(() => {
-        if (!backBtn.classList.contains('visible')) {
-          backBtn.style.display = 'none';
-        }
-      }, 300);
-    }
-
-    backBtn.addEventListener('click', () => {
-      if (previousScrollPosition !== null) {
-        window.scrollTo({
-          top: previousScrollPosition,
-          behavior: 'smooth'
-        });
-        previousScrollPosition = null;
-        hideBackButton();
-      }
-    });
-
-    // Hide back button when user scrolls manually near the original position
-    // Only hide if button has been shown for at least 3 seconds
-    window.addEventListener('scroll', () => {
-      if (previousScrollPosition !== null && backBtn.classList.contains('visible')) {
-        const timeSinceShown = Date.now() - backButtonShownAt;
-        if (timeSinceShown >= 3000) {
-          const currentPos = window.scrollY;
-          const diff = Math.abs(currentPos - previousScrollPosition);
-          // If user scrolled back close to original position, hide the button
-          if (diff < 100) {
-            previousScrollPosition = null;
-            hideBackButton();
-          }
-        }
-      }
-    });
-
-    // Highlight text from URL parameter on page load
-    (function() {
-      const params = new URLSearchParams(window.location.search);
-      const startMarker = params.get('a');
-      if (!startMarker) return;
-
-      const endMarker = params.get('b') || startMarker;
-      const prefix = params.get('p') || '';
-      const suffix = params.get('s') || '';
-
-      // Clean URL after reading parameter
-      const cleanUrl = window.location.href.split('?')[0];
-      history.replaceState(null, '', cleanUrl);
-
-      const content = document.getElementById('content');
-      const walker = document.createTreeWalker(
-        content,
-        NodeFilter.SHOW_TEXT,
-        null,
-        false
-      );
-
-      let node;
-      while (node = walker.nextNode()) {
-        const nodeText = node.textContent;
-        let startIdx = nodeText.indexOf(startMarker);
-
-        while (startIdx !== -1) {
-          // Check prefix
-          if (prefix) {
-            const beforeText = nodeText.substring(0, startIdx);
-            if (!beforeText.endsWith(prefix)) {
-              startIdx = nodeText.indexOf(startMarker, startIdx + 1);
-              continue;
-            }
-          }
-
-          // Find end marker after start marker
-          const searchFrom = startIdx + startMarker.length;
-          let endIdx = nodeText.indexOf(endMarker, searchFrom - endMarker.length);
-          if (endIdx < startIdx) endIdx = nodeText.indexOf(endMarker, startIdx);
-
-          // If end marker not found or same as start, use start marker end
-          if (endIdx === -1 || endMarker === startMarker) {
-            endIdx = startIdx;
-          }
-          const highlightEnd = endIdx + endMarker.length;
-
-          // Check suffix
-          if (suffix) {
-            const afterText = nodeText.substring(highlightEnd);
-            if (!afterText.startsWith(suffix)) {
-              startIdx = nodeText.indexOf(startMarker, startIdx + 1);
-              continue;
-            }
-          }
-
-          // Highlight from start marker to end of end marker
-          const range = document.createRange();
-          range.setStart(node, startIdx);
-          range.setEnd(node, highlightEnd);
-
-          const highlight = document.createElement('mark');
-          highlight.className = 'text-highlight';
-          range.surroundContents(highlight);
-
-          // Scroll to highlighted text
-          const rect = highlight.getBoundingClientRect();
-          const scrollTop = window.scrollY + rect.top - window.innerHeight / 2 + rect.height / 2;
-          window.scrollTo({ top: scrollTop, left: 0, behavior: 'smooth' });
-
-          return;
-        }
-      }
-    })();
-  </script>
+  <button id="back-to-position" class="back-position" type="button" hidden>이전 위치</button>
+  <script id="rules-config" type="application/json">{config}</script>
 </body>
 </html>
-'''
+"""
 
 
-def convert_to_html(tex_path, output_path):
-    """Main conversion function."""
-    tex_path = Path(tex_path)
-    output_path = Path(output_path)
-    aux_path = tex_path.with_suffix('.aux')
-
-    if not aux_path.exists():
-        print(f"Error: {aux_path} not found. Please compile the LaTeX document first.")
-        print("Run: pdflatex formula.tex (multiple times to resolve references)")
-        sys.exit(1)
-
-    print("Parsing .aux file for label references...")
-    labels = parse_aux_file(aux_path)
-    print(f"Found {len(labels)} labels")
-
-    print("Reading LaTeX source...")
-    with open(tex_path, 'r', encoding='utf-8') as f:
-        tex_content = f.read()
-
-    print("Resolving references...")
-    tex_content = resolve_refs_in_tex(tex_content, labels)
-
-    print("Preprocessing for pandoc...")
-    tex_content = preprocess_tex_for_pandoc(tex_content)
-
-    preprocessed_path = tex_path.with_name(tex_path.stem + '_preprocessed.tex')
-    with open(preprocessed_path, 'w', encoding='utf-8') as f:
-        f.write(tex_content)
-
-    template_path = tex_path.with_name('pandoc_template.html')
-    with open(template_path, 'w', encoding='utf-8') as f:
-        f.write(create_pandoc_template())
-
-    print("Converting to HTML with pandoc...")
-    cmd = [
-        'pandoc',
-        str(preprocessed_path),
-        '-f', 'latex',
-        '-t', 'html5',
-        '-o', str(output_path),
-        '--standalone',
-        '--template', str(template_path),
-        '--metadata', 'title=Formula Student Korea 차량기술규정',
-        '--mathjax',
-        '--wrap=none',
-    ]
-
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            print(f"Pandoc warnings/errors:\n{result.stderr}")
-    except FileNotFoundError:
-        print("Error: pandoc not found. Please install pandoc.")
-        sys.exit(1)
-
-    print("Post-processing HTML...")
-    with open(output_path, 'r', encoding='utf-8') as f:
-        html_content = f.read()
-
-    html_content = postprocess_html(html_content)
-
-    with open(output_path, 'w', encoding='utf-8') as f:
-        f.write(html_content)
-
-    # preprocessed_path.unlink(missing_ok=True)
-    template_path.unlink(missing_ok=True)
-
-    print(f"HTML output saved to: {output_path}")
-    return output_path
+def catalog_entry_for(path: Path) -> dict | None:
+    catalog_path = ROOT / "rules" / "catalog.json"
+    if not catalog_path.exists():
+        return None
+    catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+    resolved = path.resolve()
+    for entry in catalog["documents"]:
+        if (ROOT / entry["tex"]).resolve() == resolved:
+            return entry
+    return None
 
 
-if __name__ == '__main__':
-    if len(sys.argv) < 2:
-        print("Usage: python tex2html.py <input.tex> [output.html]")
-        sys.exit(1)
+def convert(args: argparse.Namespace) -> None:
+    input_path = args.input.resolve()
+    entry = catalog_entry_for(input_path) or {}
+    edition = args.edition or entry.get("edition")
+    document = args.document or entry.get("document")
+    title = args.title or entry.get("title") or input_path.stem
+    pdf_filename = args.pdf_filename or entry.get("pdf_filename") or f"{input_path.stem}.pdf"
+    if not edition or not document:
+        raise SystemExit("--edition과 --document가 필요합니다.")
+    asset_dir = args.asset_dir or (ROOT / entry["assets"] if entry.get("assets") else None)
+    aux_path = args.aux or input_path.with_suffix(".aux")
+    source = resolve_references(input_path.read_text(encoding="utf-8"), parse_aux_file(aux_path))
+    fragment = run_pandoc(preprocess_tex(source))
+    soup, rules = annotate_rules(fragment, int(edition), document, asset_dir)
+    if resolve_html_reference_labels(soup, rules):
+        # Recompute searchable text after fallback labels have been restored.
+        # Content hashes stay stable because canonical references use hrefs.
+        soup, rules = annotate_rules(str(soup), int(edition), document, asset_dir)
+    unresolved = unresolved_reference_labels(soup)
+    if unresolved:
+        preview = ", ".join(unresolved[:5])
+        raise ValueError(f"미해결 규정 참조 {len(unresolved)}개: {preview}")
+    broken = broken_internal_references(soup)
+    if broken:
+        preview = ", ".join(broken[:5])
+        raise ValueError(f"대상이 없는 내부 규정 참조 {len(broken)}개: {preview}")
+    apply_figure_widths(soup, source)
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(
+        render_document(soup, title, int(edition), document, pdf_filename), encoding="utf-8"
+    )
+    index_path = args.index_output or args.output.with_name("rules-index.json")
+    index_path.write_text(
+        json.dumps(
+            {"schema_version": 1, "edition": int(edition), "document": document, "rules": rules},
+            ensure_ascii=False,
+            indent=2,
+        ) + "\n",
+        encoding="utf-8",
+    )
+    print(f"{args.output}: {len(rules)}개 조항 인덱스 생성")
 
-    input_file = sys.argv[1]
-    output_file = sys.argv[2] if len(sys.argv) > 2 else Path(input_file).with_suffix('.html')
 
-    convert_to_html(input_file, output_file)
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("input", type=Path)
+    parser.add_argument("output", type=Path)
+    parser.add_argument("--edition", type=int)
+    parser.add_argument("--document")
+    parser.add_argument("--title")
+    parser.add_argument("--pdf-filename")
+    parser.add_argument("--asset-dir", type=Path)
+    parser.add_argument("--aux", type=Path)
+    parser.add_argument("--index-output", type=Path)
+    return parser.parse_args()
+
+
+if __name__ == "__main__":
+    convert(parse_args())

@@ -1,0 +1,70 @@
+name: Check official rule updates
+
+on:
+  schedule:
+    - cron: "17 0 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install checker dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Compare official PDFs
+        id: compare
+        run: |
+          python scripts/check_upstream.py --output upstream-report.json --download-dir upstream-pdfs
+          echo "has_changes=$(jq -r '.status == "changes"' upstream-report.json)" >> "$GITHUB_OUTPUT"
+      - name: Upload audit report
+        uses: actions/upload-artifact@v4
+        with:
+          name: upstream-check-${{ github.run_id }}
+          path: |
+            upstream-report.json
+            upstream-pdfs/
+          if-no-files-found: ignore
+      - name: Open or update a review issue
+        if: steps.compare.outputs.has_changes == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = JSON.parse(fs.readFileSync('upstream-report.json', 'utf8'));
+            const marker = '<!-- fsk-rules-upstream-change -->';
+            const rows = report.changes.map(change =>
+              `| ${change.edition} | ${change.document} | ${change.change} | ${change.post_id} | \`${change.pdf_hash}\` |`
+            ).join('\n');
+            const body = `${marker}
+            The official KSAE rules board contains Formula rules that differ from this repository.
+
+            | Edition | Document | Change | Post | PDF hash |
+            | --- | --- | --- | ---: | --- |
+            ${rows}
+
+            Official board: ${report.board_url}
+
+            - [ ] Review the downloaded workflow artifact against the official PDF.
+            - [ ] Update the corresponding LaTeX source and catalog metadata.
+            - [ ] Verify generated PDF, HTML, clause IDs, and content hashes.
+            - [ ] Tag a release if an immutable snapshot is required.
+
+            This issue is intentionally review-only; the workflow never edits rule text automatically.`;
+            const { owner, repo } = context.repo;
+            const open = await github.paginate(github.rest.issues.listForRepo, {
+              owner, repo, state: 'open', per_page: 100
+            });
+            const existing = open.find(issue => issue.body && issue.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.update({ owner, repo, issue_number: existing.number, body });
+            } else {
+              await github.rest.issues.create({ owner, repo, title: 'Official Formula rules require review', body });
+            }

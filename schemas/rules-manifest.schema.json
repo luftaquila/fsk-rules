@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://luftaquila.github.io/fsk-rules/schemas/rules-manifest.schema.json",
+  "title": "FSK rules manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "latest_edition", "documents"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "latest_edition": { "type": "integer", "minimum": 2000 },
+    "documents": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["edition", "document", "title", "short_title", "effective_date", "web_path", "pdf_path", "index_path", "source"],
+        "properties": {
+          "edition": { "type": "integer", "minimum": 2000 },
+          "document": { "enum": ["formula-technical", "formula-competition"] },
+          "title": { "type": "string" },
+          "short_title": { "type": "string" },
+          "effective_date": { "type": "string", "format": "date" },
+          "web_path": { "type": "string" },
+          "pdf_path": { "type": "string" },
+          "index_path": { "type": "string" },
+          "source": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["status", "post_id", "published_date", "post_url", "pdf_hash"],
+            "properties": {
+              "status": { "const": "verified" },
+              "post_id": { "type": "integer" },
+              "published_date": { "type": "string", "format": "date" },
+              "post_url": { "type": "string", "pattern": "^https://www\\.ksae\\.org/jajak/bbs/" },
+              "pdf_hash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

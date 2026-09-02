@@ -503,8 +503,8 @@ def main():
     )
     parser.add_argument(
         "--tex",
-        default=str(Path(__file__).parent / "formula.tex"),
-        help="Path to formula.tex (default: ./formula.tex)",
+        default=str(Path(__file__).parent / "rules/2026/formula-technical/rules.tex"),
+        help="Path to a rules LaTeX source (default: latest Formula technical rules)",
     )
     parser.add_argument(
         "--url",

@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "latest_edition": 2026,
+  "documents": [
+    {
+      "edition": 2026,
+      "document": "formula-technical",
+      "title": "Formula Student Korea 차량기술규정",
+      "short_title": "차량기술규정",
+      "tex": "rules/2026/formula-technical/rules.tex",
+      "entrypoint": "formula.tex",
+      "assets": "rules/2026/formula-technical/assets",
+      "pdf_source": "formula.pdf",
+      "aux_source": "formula.aux",
+      "pdf_filename": "formula-technical-2026.pdf",
+      "effective_date": "2025-12-18",
+      "source": {
+        "status": "verified",
+        "post_id": 71175,
+        "published_date": "2025-12-22",
+        "post_url": "https://www.ksae.org/jajak/bbs/?number=71175&mode=view&code=J_rule",
+        "attachment_url": "https://www.ksae.org/jajak/func/download.php?path=L2hvbWUvdmlydHVhbC9rc2FlL2h0ZG9jcy8vamFqYWsvdXBsb2FkL0pfcnVsZS82ODUxN18xNzY2Mzg3MjAxLnBkZg==&filename=W+q3nOyglV0gRm9ybXVsYSDssKjrn4nquLDsiKDqt5zsoJUoMjAyNikucGRm",
+        "pdf_hash": "sha256:26e8ab608065af0b7b0b66e751936c2debd5aaaea2c44ac82519c2f84bfe9e89"
+      }
+    },
+    {
+      "edition": 2026,
+      "document": "formula-competition",
+      "title": "Formula 경기진행규정",
+      "short_title": "경기진행규정",
+      "tex": "rules/2026/formula-competition/rules.tex",
+      "entrypoint": "competition.tex",
+      "assets": "rules/2026/formula-competition/assets",
+      "pdf_source": "competition.pdf",
+      "aux_source": "competition.aux",
+      "pdf_filename": "formula-competition-2026.pdf",
+      "effective_date": "2026-03-19",
+      "source": {
+        "status": "verified",
+        "post_id": 71369,
+        "published_date": "2026-03-23",
+        "post_url": "https://www.ksae.org/jajak/bbs/?number=71369&mode=view&code=J_rule",
+        "attachment_url": "https://www.ksae.org/jajak/func/download.php?path=L2hvbWUvdmlydHVhbC9rc2FlL2h0ZG9jcy8vamFqYWsvdXBsb2FkL0pfcnVsZS84NjA2MV8xNzc0MjI3OTU5LnBkZg==&filename=W+q3nOyglV0gRm9ybXVsYSDqsr3quLDsp4Ttlonqt5zsoJUoMjAyNikucGRm",
+        "pdf_hash": "sha256:90995afcd170d0d231f7579b0d3326b8bc9cffaf1e114ad6573cdf44d06e7c0a"
+      }
+    }
+  ]
+}
