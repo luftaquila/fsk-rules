@@ -13,14 +13,35 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["edition", "document", "clause_id", "citation", "source_hash"],
+        "required": ["edition", "document", "rule_key", "clause_id", "citation", "source_hash"],
         "properties": {
           "edition": { "type": "integer", "minimum": 2000 },
           "document": { "enum": ["formula-technical", "formula-competition"] },
+          "rule_key": { "type": "string", "pattern": "^formula-(technical|competition)\\.[a-z0-9]+([.-][a-z0-9]+)*$" },
           "clause_id": { "type": "string", "pattern": "^formula-(technical|competition)-[a-z0-9-]+$" },
           "citation": { "type": "string", "minLength": 3 },
           "source_hash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
-        }
+        },
+        "allOf": [
+          {
+            "if": { "properties": { "document": { "const": "formula-technical" } } },
+            "then": {
+              "properties": {
+                "rule_key": { "pattern": "^formula-technical\\." },
+                "clause_id": { "pattern": "^formula-technical-" }
+              }
+            }
+          },
+          {
+            "if": { "properties": { "document": { "const": "formula-competition" } } },
+            "then": {
+              "properties": {
+                "rule_key": { "pattern": "^formula-competition\\." },
+                "clause_id": { "pattern": "^formula-competition-" }
+              }
+            }
+          }
+        ]
       }
     }
   },

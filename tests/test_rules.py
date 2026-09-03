@@ -17,6 +17,7 @@ from tex2html import (
     preprocess_tex,
     resolve_html_reference_labels,
     strip_color_groups,
+    validate_rule_key_labels,
 )
 
 
@@ -55,10 +56,97 @@ class RuleIndexTests(unittest.TestCase):
         _, second = annotate_rules(fragment, 2027, "formula-technical")
         self.assertEqual(first[1]["content_hash"], second[1]["content_hash"])
 
+    def test_rule_key_survives_a_clause_number_change(self):
+        first_fragment = """
+        <h2>제1조 (제동장치)</h2>
+        <ol><li>제동등 <span id="rule-formula-technical.brake-light"></span></li></ol>
+        """
+        moved_fragment = """
+        <h2>제1조 (제동장치)</h2>
+        <ol><li>새 조항</li><li>제동등 <span id="rule-formula-technical.brake-light"></span></li></ol>
+        """
+        first_soup, first = annotate_rules(first_fragment, 2026, "formula-technical")
+        moved_soup, moved = annotate_rules(moved_fragment, 2027, "formula-technical")
+        first_rule = next(rule for rule in first if rule.get("rule_key") == "formula-technical.brake-light")
+        moved_rule = next(rule for rule in moved if rule.get("rule_key") == "formula-technical.brake-light")
+
+        self.assertEqual(first_rule["id"], "formula-technical-1-1")
+        self.assertEqual(moved_rule["id"], "formula-technical-1-2")
+        self.assertEqual(first_rule["content_hash"], moved_rule["content_hash"])
+        self.assertEqual(
+            moved_soup.find(id="formula-technical-1-2")["data-rule-key"],
+            "formula-technical.brake-light",
+        )
+        self.assertIsNotNone(first_soup.find(id="rule-formula-technical.brake-light"))
+
+    def test_article_can_have_a_rule_key(self):
+        fragment = """
+        <h2>제1조 (접지)</h2><div id="rule-formula-technical.grounding"></div>
+        <p>접지 본문</p>
+        """
+        soup, rules = annotate_rules(fragment, 2026, "formula-technical")
+        self.assertEqual(rules[0]["rule_key"], "formula-technical.grounding")
+        self.assertEqual(soup.find(id="formula-technical-1")["data-rule-key"], "formula-technical.grounding")
+
+        _, repeated_rules = annotate_rules(str(soup), 2026, "formula-technical")
+        self.assertEqual(repeated_rules[0]["rule_key"], "formula-technical.grounding")
+
+    def test_duplicate_rule_keys_fail_the_build(self):
+        fragment = """
+        <h2>제1조 (제동장치)</h2><ol>
+          <li>첫째 <span id="rule-formula-technical.brake-light"></span></li>
+          <li>둘째 <span id="rule-formula-technical.brake-light"></span></li>
+        </ol>
+        """
+        with self.assertRaisesRegex(ValueError, "중복 영구 규정 키"):
+            annotate_rules(fragment, 2026, "formula-technical")
+
+    def test_one_clause_cannot_have_multiple_rule_keys(self):
+        fragment = """
+        <h2>제1조 (제동장치)</h2><ol><li>제동등
+          <span id="rule-formula-technical.brake-light"></span>
+          <span id="rule-formula-technical.stop-lamp"></span>
+        </li></ol>
+        """
+        with self.assertRaisesRegex(ValueError, "하나의 조항에 영구 규정 키가 여러 개임"):
+            annotate_rules(fragment, 2026, "formula-technical")
+
+    def test_rule_key_must_match_its_document(self):
+        fragment = """
+        <h2>제1조 (제동장치)</h2><ol>
+          <li>제동등 <span id="rule-formula-competition.brake-light"></span></li>
+        </ol>
+        """
+        with self.assertRaisesRegex(ValueError, "문서와 영구 규정 키가 일치하지 않음"):
+            annotate_rules(fragment, 2026, "formula-technical")
+
+    def test_latex_rule_key_is_validated_before_label_normalization(self):
+        with self.assertRaisesRegex(ValueError, "잘못된 영구 규정 키"):
+            validate_rule_key_labels(
+                r"\item 제동등\label{rule:formula-technical.brake light}",
+                "formula-technical",
+            )
+
+        validate_rule_key_labels(
+            "% \\label{rule:not-a-real-key}\n"
+            r"\item 제동등\label{rule:formula-technical.brake-light}",
+            "formula-technical",
+        )
+
     def test_article_hash_covers_its_body(self):
         _, first = annotate_rules("<h2>제1조 (목적)</h2><p>첫 내용</p>", 2026, "formula-technical")
         _, second = annotate_rules("<h2>제1조 (목적)</h2><p>바뀐 내용</p>", 2026, "formula-technical")
         self.assertNotEqual(first[0]["content_hash"], second[0]["content_hash"])
+
+    def test_rule_key_metadata_does_not_change_content_hash(self):
+        without_key = '<h2>제1조 (접지)</h2><div id="section-grounding"></div><p>접지 본문</p>'
+        with_key = (
+            '<h2>제1조 (접지)</h2><div id="section-grounding"></div>'
+            '<div id="rule-formula-technical.grounding"></div><p>접지 본문</p>'
+        )
+        _, first = annotate_rules(without_key, 2026, "formula-technical")
+        _, second = annotate_rules(with_key, 2026, "formula-technical")
+        self.assertEqual(first[0]["content_hash"], second[0]["content_hash"])
 
     def test_reference_display_does_not_change_hash(self):
         first = '<h2>제1조 (목적)</h2><p><a href="#formula-technical-2">[section:대상]</a></p>'
@@ -136,6 +224,7 @@ class ContractTests(unittest.TestCase):
                 {
                     "edition": 2026,
                     "document": "formula-technical",
+                    "rule_key": "formula-technical.brake-light",
                     "clause_id": "formula-technical-10-9",
                     "citation": "제10조 9항",
                     "source_hash": "sha256:" + "a" * 64,
@@ -143,6 +232,7 @@ class ContractTests(unittest.TestCase):
                 {
                     "edition": 2026,
                     "document": "formula-competition",
+                    "rule_key": "formula-competition.vehicle-inspection",
                     "clause_id": "formula-competition-3-1",
                     "citation": "제3조 1항",
                     "source_hash": "sha256:" + "b" * 64,
@@ -159,12 +249,26 @@ class ContractTests(unittest.TestCase):
             "references": [{
                 "edition": 2026,
                 "document": "formula-technical",
+                "rule_key": "formula-technical.purpose",
                 "clause_id": "formula-technical-1",
                 "citation": "제1조",
                 "source_hash": "sha256:" + "a" * 64,
             }],
         }
         self.assertTrue(list(self.validator("rule-refs.schema.json").iter_errors(invalid)))
+
+    def test_verified_rule_ref_requires_rule_key(self):
+        payload = {
+            "status": "verified",
+            "references": [{
+                "edition": 2026,
+                "document": "formula-technical",
+                "clause_id": "formula-technical-10-9",
+                "citation": "제10조 9항",
+                "source_hash": "sha256:" + "a" * 64,
+            }],
+        }
+        self.assertTrue(list(self.validator("rule-refs.schema.json").iter_errors(payload)))
 
 
 class PdfTemplateTests(unittest.TestCase):
