@@ -21,6 +21,7 @@ DOCUMENT_TAG = re.compile(r"^(formula-technical|formula-competition)-(\d{4})-r([
 SITE_TAG = re.compile(r"^site-(\d{8})\.([1-9]\d*)$")
 HASH_PATTERN = re.compile(r"^sha256:[a-f0-9]{64}$")
 COMMIT_PATTERN = re.compile(r"^[a-f0-9]{40}$")
+RULE_KEY_PATTERN = re.compile(r"^formula-(technical|competition)\.[a-z0-9]+([.-][a-z0-9]+)*$")
 
 
 def load_catalog(root: Path = ROOT) -> dict:
@@ -46,6 +47,14 @@ def validate_catalog(catalog: dict) -> None:
             raise ValueError(f"문서 edition/revision이 올바르지 않습니다: {key}")
         if not HASH_PATTERN.fullmatch(entry.get("source", {}).get("pdf_hash", "")):
             raise ValueError(f"공식 PDF 해시가 올바르지 않습니다: {key}")
+        retired = entry.get("retired_rule_keys", [])
+        if not isinstance(retired, list) or len(set(retired)) != len(retired) or any(
+            not isinstance(rule_key, str)
+            or not RULE_KEY_PATTERN.fullmatch(rule_key)
+            or not rule_key.startswith(f'{entry["document"]}.')
+            for rule_key in retired
+        ):
+            raise ValueError(f"retired_rule_keys가 올바르지 않습니다: {key}")
         seen.add(key)
         documents_by_edition.setdefault(entry["edition"], set()).add(entry["document"])
     if not seen:
@@ -171,6 +180,32 @@ def validate_built_manifest(
 
 def release_manifest_url(repository: str, tag: str) -> str:
     return f"https://github.com/{repository}/releases/download/{tag}/{tag}-release.json"
+
+
+def release_index_url(repository: str, tag: str) -> str:
+    return f"https://github.com/{repository}/releases/download/{tag}/{tag}-rules-index.json"
+
+
+def index_rule_keys(index: dict, document: str) -> set[str]:
+    if index.get("schema_version") != 2 or index.get("document") != document or not isinstance(index.get("rules"), list):
+        raise ValueError(f"rules-index가 올바르지 않습니다: {document}")
+    return {rule["rule_key"] for rule in index["rules"] if isinstance(rule, dict) and "rule_key" in rule}
+
+
+def check_rule_key_continuity(entry: dict, previous_index: dict, current_index: dict) -> dict:
+    """Consumers store rule keys, so a key may only disappear when the catalog says so."""
+    document = entry["document"]
+    previous_keys = index_rule_keys(previous_index, document)
+    current_keys = index_rule_keys(current_index, document)
+    retired = set(entry.get("retired_rule_keys", []))
+    removed = previous_keys - current_keys
+    undeclared = sorted(removed - retired)
+    if undeclared:
+        raise ValueError(f"{document}: 이전 Release의 영구 규정 키가 선언 없이 제거되었습니다: {undeclared}")
+    still_present = sorted(retired & current_keys)
+    if still_present:
+        raise ValueError(f"{document}: retired_rule_keys에 선언된 키가 아직 존재합니다: {still_present}")
+    return {"document": document, "retired": sorted(removed), "added": sorted(current_keys - previous_keys)}
 
 
 def fetch_json(url: str) -> dict:
@@ -368,7 +403,23 @@ def command_check_catalog(args) -> None:
             manifests[tag] = fetch_json(release_manifest_url(args.repository, tag))
         except Exception as error:
             raise ValueError(f"Release manifest를 불러올 수 없습니다: {tag}") from error
-    print(json.dumps(version_state(catalog, tags, manifests, args.root), ensure_ascii=False, indent=2))
+    states = version_state(catalog, tags, manifests, args.root)
+    continuity = []
+    for state in states:
+        if state["state"] != "candidate":
+            continue
+        entry = catalog_entry(catalog, state["document"], state["edition"])
+        previous_tag = f'{entry["document"]}-{entry["edition"]}-r{entry["revision"] - 1}'
+        current_path = args.site / str(entry["edition"]) / entry["document"] / "rules-index.json"
+        if not current_path.is_file():
+            raise FileNotFoundError(f"빌드된 rules-index.json이 없습니다: {current_path}")
+        current_index = json.loads(current_path.read_text(encoding="utf-8"))
+        try:
+            previous_index = fetch_json(release_index_url(args.repository, previous_tag))
+        except Exception as error:
+            raise ValueError(f"Release rules-index를 불러올 수 없습니다: {previous_tag}") from error
+        continuity.append(check_rule_key_continuity(entry, previous_index, current_index))
+    print(json.dumps({"documents": states, "rule_keys": continuity}, ensure_ascii=False, indent=2))
 
 
 def command_check_tag(args) -> None:
@@ -414,6 +465,7 @@ def main() -> None:
     subparsers = parser.add_subparsers(dest="command", required=True)
     check_catalog = subparsers.add_parser("check-catalog")
     check_catalog.add_argument("--repository", default="luftaquila/fsk-rules")
+    check_catalog.add_argument("--site", type=Path, default=ROOT / "_site")
     check_catalog.set_defaults(handler=command_check_catalog)
     check_tag = subparsers.add_parser("check-tag")
     check_tag.add_argument("--tag", required=True)

@@ -38,6 +38,16 @@ class GeneratedOutputTests(unittest.TestCase):
             keys = [rule["rule_key"] for rule in index["rules"] if "rule_key" in rule]
             self.assertEqual(len(keys), len(set(keys)))
 
+    def test_every_indexed_clause_has_a_stable_rule_key(self):
+        manifest = json.loads((SITE / "rules-manifest.json").read_text(encoding="utf-8"))
+        for document in manifest["documents"]:
+            index = json.loads((SITE / document["index_path"]).read_text(encoding="utf-8"))
+            missing = [rule["id"] for rule in index["rules"] if "rule_key" not in rule]
+            self.assertFalse(
+                missing,
+                f'{document["document"]} has {len(missing)} indexed clauses without stable keys',
+            )
+
     def test_every_indexed_clause_is_an_html_anchor(self):
         manifest = json.loads((SITE / "rules-manifest.json").read_text(encoding="utf-8"))
         for document in manifest["documents"]:

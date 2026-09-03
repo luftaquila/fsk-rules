@@ -24,6 +24,10 @@ Digest는 다음 문서 산출물 입력을 포함한다.
 
 `style.css`, `viewer.js`, `home.js`, GitHub Actions, 설명 문서만 바뀌는 경우 문서 revision은 올리지 않고 새 site 태그로만 배포한다. 이 경계는 공유 사이트 표현을 바꾸는 일과 규정 판본을 바꾸는 일을 분리한다.
 
+## 영구 규정 키 연속성
+
+소비자는 `rules-index.json`의 `rule_key`를 저장하므로, revision이 올라가는 PR에서 `check-catalog`는 이전 문서 Release의 `rules-index.json`과 현재 빌드를 비교한다. 이전 Release에 있던 키가 사라지면 catalog 문서 항목의 `retired_rule_keys`에 선언된 경우에만 통과하고, 선언된 키가 아직 인덱스에 남아 있으면 실패한다. 새 키 추가는 자유롭다. 키 작성 규칙은 [연동 가이드](rule-refs.md)에 있다.
+
 ## 문서 Release
 
 1. 변경 PR의 CI가 현재 digest와 `revision`의 일치를 검증한다.

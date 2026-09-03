@@ -28,6 +28,12 @@
           "aux_source": { "type": "string", "minLength": 1 },
           "pdf_filename": { "type": "string", "pattern": "^[a-z0-9.-]+\\.pdf$" },
           "effective_date": { "type": "string", "format": "date" },
+          "retired_rule_keys": {
+            "description": "Stable keys that earlier releases of this document exposed and this revision intentionally drops.",
+            "type": "array",
+            "uniqueItems": true,
+            "items": { "type": "string", "pattern": "^formula-(technical|competition)\\.[a-z0-9]+([.-][a-z0-9]+)*$" }
+          },
           "source": {
             "type": "object",
             "additionalProperties": false,
