@@ -18,6 +18,14 @@ class GeneratedOutputTests(unittest.TestCase):
     def test_manifest_and_indexes_match_published_schemas(self):
         manifest = json.loads((SITE / "rules-manifest.json").read_text(encoding="utf-8"))
         Draft202012Validator(self.load_schema("rules-manifest.schema.json")).validate(manifest)
+        self.assertEqual(manifest["schema_version"], 2)
+        self.assertRegex(manifest["deployment"]["source_commit"], r"^[a-f0-9]{40}$")
+        for document in manifest["documents"]:
+            self.assertEqual(document["version"], f'{document["edition"]}-r{document["revision"]}')
+            self.assertEqual(
+                document["release_tag"],
+                f'{document["document"]}-{document["edition"]}-r{document["revision"]}',
+            )
         index_validator = Draft202012Validator(self.load_schema("rules-index.schema.json"))
         for document in manifest["documents"]:
             index_path = SITE / document["index_path"]

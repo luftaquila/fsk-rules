@@ -1,63 +1,65 @@
 name: Build PDF/HTML
 
 on:
+  pull_request:
+    branches: [main]
   push:
     branches: [main]
   workflow_call:
+    inputs:
+      site_tag:
+        description: Optional production site tag embedded in the manifest
+        required: false
+        type: string
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
-  group: pages-${{ github.ref }}
+  group: rules-build-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
 
-      - name: Install PDF fonts
-        run: |
-          mkdir -p fonts
-          wget -q https://github.com/orioncactus/pretendard/releases/download/v1.3.9/Pretendard-1.3.9.zip
-          unzip -q Pretendard-1.3.9.zip
-          mv public/static/alternative/*.ttf fonts/
-          wget -q https://github.com/notofonts/noto-cjk/raw/refs/heads/main/Sans/OTF/Korean/NotoSansCJKkr-Regular.otf
-          mv *.otf fonts/
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12.13"
+
+      - name: Install verified build fonts
+        run: python scripts/download_build_assets.py
 
       - name: Compile both rule PDFs
-        uses: xu-cheng/latex-action@v3
+        uses: xu-cheng/latex-action@e2f99d4b3685b0da93f97e1b86ad8fab81105098 # v3
         with:
+          docker_image: ghcr.io/xu-cheng/texlive-full:20250301
           root_file: |
             formula.tex
             competition.tex
           latexmk_use_lualatex: true
           extra_fonts: fonts/*
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
       - name: Install web build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y pandoc
-          python -m pip install -r requirements.txt
-
-      - name: Download web fonts
-        run: |
-          unzip -j -o Pretendard-1.3.9.zip web/static/woff2/Pretendard-Regular.woff2 web/static/woff2/Pretendard-Bold.woff2 -d fonts
-          curl --fail --silent --show-error --location "https://cdn.jsdelivr.net/fontsource/fonts/stix-two-math@latest/latin-400-normal.woff2" -o fonts/STIXTwoMath-Regular.woff2
+        run: python -m pip install -r requirements.txt
 
       - name: Build catalog site and validate contracts
+        env:
+          SITE_TAG: ${{ inputs.site_tag }}
         run: |
-          python build.py --skip-pdf
+          args=(--skip-pdf --source-commit "$GITHUB_SHA")
+          if [[ -n "$SITE_TAG" ]]; then args+=(--site-tag "$SITE_TAG"); fi
+          python build.py "${args[@]}"
           python -m unittest discover -s tests
+
+      - name: Validate document revision state
+        if: github.ref_type != 'tag'
+        run: python scripts/release_contract.py check-catalog
 
       - name: Install browser test dependencies
         run: |
@@ -67,28 +69,11 @@ jobs:
       - name: Test reader interactions
         run: npm run test:web
 
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: _site
-
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: build-output
           path: |
             formula.pdf
             competition.pdf
             _site/
-
-  deploy:
-    if: github.ref == 'refs/heads/main' && github.event_name != 'workflow_call'
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4

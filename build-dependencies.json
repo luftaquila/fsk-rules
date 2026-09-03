@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "toolchain": {
+    "python": "3.12.13",
+    "pandoc": "3.9",
+    "pypandoc_binary": "1.17",
+    "latex_action": "e2f99d4b3685b0da93f97e1b86ad8fab81105098",
+    "texlive_image": "ghcr.io/xu-cheng/texlive-full:20250301"
+  },
+  "assets": [
+    {
+      "name": "pretendard-1.3.9",
+      "url": "https://github.com/orioncactus/pretendard/releases/download/v1.3.9/Pretendard-1.3.9.zip",
+      "sha256": "04be351a74d6bf7d60c480a3087e51d185485d35a52023142af1df19eb8c428a",
+      "archive_members": [
+        { "pattern": "public/static/alternative/*.ttf" },
+        { "pattern": "web/static/woff2/Pretendard-Regular.woff2" },
+        { "pattern": "web/static/woff2/Pretendard-Bold.woff2" }
+      ]
+    },
+    {
+      "name": "noto-sans-cjk-kr-regular-f8d1575",
+      "url": "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTF/Korean/NotoSansCJKkr-Regular.otf",
+      "sha256": "6bcb2a0703aa137e874fc2dffa85f6c21ba9a67fa329e81b8c801663af7e992a",
+      "filename": "NotoSansCJKkr-Regular.otf"
+    },
+    {
+      "name": "stix-two-math-5.3.0",
+      "url": "https://cdn.jsdelivr.net/fontsource/fonts/stix-two-math@5.3.0/latin-400-normal.woff2",
+      "sha256": "8b2a6834cfe1f4e0f3724ffa59fe92000013fc5a4c41e6a3f438006c26c60f0d",
+      "filename": "STIXTwoMath-Regular.woff2"
+    }
+  ]
+}

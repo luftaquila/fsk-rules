@@ -15,19 +15,24 @@ rules/
       rules.tex
       assets/
 schemas/
+  build-dependencies.schema.json
+  source-catalog.schema.json
   rules-manifest.schema.json
   rules-index.schema.json
   rule-refs.schema.json
+  document-release.schema.json
+  site-release.schema.json
 ```
 
 문서 ID는 `formula-technical`, `formula-competition` 두 가지입니다. 웹 빌드 결과는 `/<edition>/<document>/`에 놓이며, 각 문서 디렉터리에 `index.html`, LaTeX 빌드 PDF, `rules-index.json`이 함께 생성됩니다.
 
 ## 빌드
 
-LuaLaTeX, Pandoc, Python 3이 필요합니다.
+LuaLaTeX와 Python 3이 필요합니다. Pandoc과 빌드 폰트는 검증된 고정 버전을 사용합니다.
 
 ```sh
 python -m pip install -r requirements.txt
+python scripts/download_build_assets.py
 make
 make check
 npm ci
@@ -45,13 +50,15 @@ PDF 도구가 없는 환경에서는 `make site-without-pdf`로 HTML과 JSON 계
 2. 공식 문서를 사람이 대조해 LaTeX와 이미지를 갱신합니다.
 3. `rules/catalog.json`에 시행일, 게시물 ID, 공식 첨부 URL과 PDF SHA-256을 기록합니다.
 4. PDF·웹·조항 인덱스를 빌드하고 테스트합니다.
-5. 필요한 경우 태그를 만들어 해당 시점의 PDF와 웹 ZIP을 GitHub Release에 보존합니다.
+5. 문서 입력이 바뀌었다면 해당 문서의 `revision`을 하나 올립니다. CI는 이전 Release와 비교해 이 규칙을 강제합니다.
+6. `formula-technical-2026-r2` 또는 `formula-competition-2026-r2` 형식의 문서 태그로 불변 PDF·웹·인덱스 Release를 만듭니다.
+7. 현재 catalog의 모든 문서 Release가 준비되면 `site-YYYYMMDD.N` 태그를 만들고 `github-pages` Environment 승인 후 운영에 반영합니다.
 
-매일 실행되는 `Check official rule updates` 워크플로는 KSAE 게시판과 PDF 해시를 비교합니다. 변경을 발견해도 규정 본문을 자동 수정하지 않고, 검토용 이슈와 원문 PDF 아티팩트만 생성합니다. 동일 연도 URL은 최신 검증본을 가리키며 이전 수정본은 Release 스냅샷으로 보존합니다.
+매일 실행되는 `Check official rule updates` 워크플로는 KSAE 게시판과 PDF 해시를 비교합니다. 변경을 발견해도 규정 본문을 자동 수정하지 않고, 검토용 이슈와 원문 PDF 아티팩트만 생성합니다. 동일 연도 URL은 최근 승인된 사이트 Release를 가리키며 이전 수정본은 GitHub Release에 보존됩니다. 상세한 버전 계약, 배포와 롤백 절차는 [릴리스 운영 가이드](docs/releases.md)를 따릅니다.
 
 ## 외부 서비스 연동
 
-진입점은 `/rules-manifest.json`입니다. 여기서 원하는 `edition`과 `document`의 `index_path`를 찾은 뒤, 문서별 `rules-index.json`에서 `rule_key`, `id`, `citation`, `text`, `href`, `content_hash`를 사용합니다. 인덱스 스키마 버전은 2입니다.
+진입점은 `/rules-manifest.json`입니다. 즉시 v2 계약을 사용하며 v1 호환 계층은 제공하지 않습니다. `deployment.site_tag`과 `deployment.source_commit`으로 현재 운영본을 식별하고, 각 문서의 `revision`, `version`, `release_tag`, `document_digest`로 정확한 불변 Release를 검증합니다. 원하는 `edition`과 `document`의 `index_path`를 찾은 뒤, 문서별 `rules-index.json`에서 `rule_key`, `id`, `citation`, `text`, `href`, `content_hash`를 사용합니다. 인덱스 스키마 버전은 2입니다.
 
 ```json
 {

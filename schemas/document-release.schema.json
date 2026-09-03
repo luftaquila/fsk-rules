@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://luftaquila.github.io/fsk-rules/schemas/document-release.schema.json",
+  "title": "FSK rules document Release manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "release_tag", "source_commit", "document", "document_digest", "artifacts"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "release_tag": { "type": "string", "pattern": "^formula-(technical|competition)-[0-9]{4}-r[1-9][0-9]*$" },
+    "source_commit": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+    "document_digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "document": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["edition", "revision", "version", "release_tag", "document_digest", "document", "source"],
+      "properties": {
+        "edition": { "type": "integer", "minimum": 2000 },
+        "revision": { "type": "integer", "minimum": 1 },
+        "version": { "type": "string", "pattern": "^[0-9]{4}-r[1-9][0-9]*$" },
+        "release_tag": { "type": "string", "pattern": "^formula-(technical|competition)-[0-9]{4}-r[1-9][0-9]*$" },
+        "document_digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "document": { "enum": ["formula-technical", "formula-competition"] },
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "post_id", "published_date", "post_url", "attachment_url", "pdf_hash"],
+          "properties": {
+            "status": { "const": "verified" },
+            "post_id": { "type": "integer" },
+            "published_date": { "type": "string", "format": "date" },
+            "post_url": { "type": "string", "pattern": "^https://www\\.ksae\\.org/jajak/bbs/" },
+            "attachment_url": { "type": "string", "pattern": "^https://www\\.ksae\\.org/jajak/func/download\\.php\\?" },
+            "pdf_hash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+          }
+        }
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "minProperties": 3,
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sha256", "size"],
+        "properties": {
+          "sha256": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+          "size": { "type": "integer", "minimum": 1 }
+        }
+      }
+    }
+  }
+}

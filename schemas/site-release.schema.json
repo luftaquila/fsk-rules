@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://luftaquila.github.io/fsk-rules/schemas/site-release.schema.json",
+  "title": "FSK rules site Release manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "release_tag", "source_commit", "rules_manifest_sha256", "site_archive_sha256"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "release_tag": { "type": "string", "pattern": "^site-[0-9]{8}\\.[1-9][0-9]*$" },
+    "source_commit": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+    "rules_manifest_sha256": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "site_archive_sha256": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+  }
+}
