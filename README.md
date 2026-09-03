@@ -51,22 +51,23 @@ PDF 도구가 없는 환경에서는 `make site-without-pdf`로 HTML과 JSON 계
 
 ## 외부 서비스 연동
 
-진입점은 `/rules-manifest.json`입니다. 여기서 원하는 `edition`과 `document`의 `index_path`를 찾은 뒤, 문서별 `rules-index.json`에서 `id`, `citation`, `text`, `href`, `content_hash`를 사용합니다.
+진입점은 `/rules-manifest.json`입니다. 여기서 원하는 `edition`과 `document`의 `index_path`를 찾은 뒤, 문서별 `rules-index.json`에서 `rule_key`, `id`, `citation`, `text`, `href`, `content_hash`를 사용합니다. 인덱스 스키마 버전은 2입니다.
 
 ```json
 {
-  "id": "formula-technical-10-9-1",
+  "rule_key": "formula-technical.brake-light",
+  "id": "formula-technical-10-9",
   "year": 2026,
   "edition": 2026,
   "document": "formula-technical",
-  "citation": "제10조 9항 1호",
-  "text": "조항 본문",
-  "href": "#formula-technical-10-9-1",
+  "citation": "제10조 9항",
+  "text": "제동등 (Brake Light) …",
+  "href": "#formula-technical-10-9",
   "content_hash": "sha256:..."
 }
 ```
 
-조항 ID는 조·항·호의 숫자 계층으로 만들기 때문에 제목이 바뀌어도 유지됩니다. 번호가 바뀌면 기존 ID 조회가 명확히 실패합니다. URL은 매니페스트의 검증된 문서 경로와 `href`를 결합해 만들며 임의의 전체 URL을 데이터베이스에 저장하지 않습니다.
+`rule_key`는 번호와 독립적인 영구 식별자입니다. 다음 연도에 조항 번호가 바뀌어도 같은 `rule_key`로 새 `id`, `citation`, `href`를 찾을 수 있습니다. `content_hash`는 내용 변경 여부를 판별합니다. URL은 매니페스트의 검증된 문서 경로와 인덱스의 `href`를 결합해 만들며 임의의 전체 URL을 데이터베이스에 저장하지 않습니다. 영구 키가 필요한 조항은 LaTeX에 `\label{rule:formula-technical.brake-light}` 형식으로 명시합니다.
 
 소비자 측 `sheet_template.rule_refs` 계약과 다음 연도 승계 규칙은 [연동 가이드](docs/rule-refs.md)에 정리되어 있습니다.
 

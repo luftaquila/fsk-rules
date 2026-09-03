@@ -21,6 +21,10 @@ from bs4 import BeautifulSoup, Tag
 ROOT = Path(__file__).resolve().parent
 KOREAN_ORDER = tuple("가나다라마바사아자차카타파하")
 LITERAL_TILDE_TOKEN = "FSKASCIITILDE"
+RULE_KEY_ANCHOR_PREFIX = "rule-"
+RULE_KEY_PATTERN = re.compile(
+    r"^formula-(?:technical|competition)\.[a-z0-9]+(?:[.-][a-z0-9]+)*$"
+)
 
 
 def parse_nested_braces(source: str, start: int) -> tuple[str, int]:
@@ -78,6 +82,21 @@ def resolve_references(source: str, labels: dict[str, str]) -> str:
 
     source = re.sub(r"\\(figref|[cC]ref|ref)\{([^}]+)\}", reference, source)
     return re.sub(r"\\pageref\{[^}]+\}", "", source)
+
+
+def validate_rule_key_labels(source: str, document: str) -> None:
+    """Validate stable keys before generic LaTeX label normalization runs."""
+    source_without_comments = re.sub(r"(?<!\\)%.*$", "", source, flags=re.MULTILINE)
+    seen: set[str] = set()
+    for match in re.finditer(r"\\label\{rule:([^}]*)\}", source_without_comments):
+        rule_key = match.group(1)
+        if not RULE_KEY_PATTERN.fullmatch(rule_key):
+            raise ValueError(f"잘못된 영구 규정 키: {rule_key}")
+        if not rule_key.startswith(f"{document}."):
+            raise ValueError(f"문서와 영구 규정 키가 일치하지 않음: {document}, {rule_key}")
+        if rule_key in seen:
+            raise ValueError(f"중복 영구 규정 키: {rule_key}")
+        seen.add(rule_key)
 
 
 def expand_deferred_competition_tail(source: str) -> str:
@@ -298,7 +317,14 @@ def canonical_article(heading: Tag, asset_dir: Path | None = None) -> tuple[str,
         if isinstance(sibling, Tag):
             nodes.append(sibling)
     text = normalize_text(" ".join(node.get_text(" ", strip=True) for node in nodes))
-    text_parts = [canonical_node_text(node) for node in nodes]
+    text_parts: list[str] = []
+    for node in nodes:
+        if str(node.get("id", "")).startswith(RULE_KEY_ANCHOR_PREFIX):
+            continue
+        canonical_text = canonical_node_text(node)
+        if node is heading:
+            canonical_text = re.sub(r"^제\d+조(?:의\d+)?\s*", "", canonical_text, count=1)
+        text_parts.append(canonical_text)
     image_parts: list[str] = []
     if asset_dir:
         for node in nodes:
@@ -321,6 +347,46 @@ def set_machine_heading_id(soup: BeautifulSoup, heading: Tag, machine_id: str) -
         heading.insert_before(alias)
     heading["id"] = machine_id
     heading["data-clause-id"] = machine_id
+
+
+def assign_rule_keys(soup: BeautifulSoup, rules: list[dict], document: str) -> None:
+    """Attach explicit ``rule:...`` LaTeX labels to their numbered clauses."""
+    entries = {rule["id"]: rule for rule in rules}
+    seen: set[str] = set()
+
+    for marker in soup.find_all(id=lambda value: value and str(value).startswith(RULE_KEY_ANCHOR_PREFIX)):
+        anchor = str(marker["id"])
+        rule_key = anchor[len(RULE_KEY_ANCHOR_PREFIX) :]
+        if not RULE_KEY_PATTERN.fullmatch(rule_key):
+            raise ValueError(f"잘못된 영구 규정 키: {rule_key}")
+        if not rule_key.startswith(f"{document}."):
+            raise ValueError(f"문서와 영구 규정 키가 일치하지 않음: {document}, {rule_key}")
+        if rule_key in seen:
+            raise ValueError(f"중복 영구 규정 키: {rule_key}")
+
+        target = marker if marker.get("data-clause-id") else marker.find_parent(attrs={"data-clause-id": True})
+        if target is None:
+            next_clause = marker.find_next(attrs={"data-clause-id": True})
+            if (
+                "legacy-anchor" in marker.get("class", [])
+                and next_clause is not None
+                and next_clause.name == "h2"
+            ):
+                target = next_clause
+            else:
+                target = marker.find_previous(attrs={"data-clause-id": True})
+
+        clause_id = str(target.get("data-clause-id", "")) if target else ""
+        entry = entries.get(clause_id)
+        if entry is None:
+            raise ValueError(f"영구 규정 키에 대응하는 조항이 없음: {rule_key}")
+        existing_rule_key = str(target.get("data-rule-key", ""))
+        if existing_rule_key and existing_rule_key != rule_key:
+            raise ValueError(f"하나의 조항에 영구 규정 키가 여러 개임: {clause_id}")
+
+        seen.add(rule_key)
+        target["data-rule-key"] = rule_key
+        entry["rule_key"] = rule_key
 
 
 def subsection_letter(number: int) -> str:
@@ -440,6 +506,7 @@ def annotate_rules(
             for item in ordered_list.find_all("li", recursive=False):
                 top_number += 1
                 append_list_entry(item, document, edition, article, (top_number,), entries, seen, asset_dir)
+    assign_rule_keys(soup, entries, document)
     return soup, entries
 
 
@@ -598,6 +665,7 @@ def convert(args: argparse.Namespace) -> None:
     asset_dir = args.asset_dir or (ROOT / entry["assets"] if entry.get("assets") else None)
     aux_path = args.aux or input_path.with_suffix(".aux")
     source = resolve_references(input_path.read_text(encoding="utf-8"), parse_aux_file(aux_path))
+    validate_rule_key_labels(source, document)
     fragment = run_pandoc(preprocess_tex(source))
     soup, rules = annotate_rules(fragment, int(edition), document, asset_dir)
     if resolve_html_reference_labels(soup, rules):
@@ -620,7 +688,7 @@ def convert(args: argparse.Namespace) -> None:
     index_path = args.index_output or args.output.with_name("rules-index.json")
     index_path.write_text(
         json.dumps(
-            {"schema_version": 1, "edition": int(edition), "document": document, "rules": rules},
+            {"schema_version": 2, "edition": int(edition), "document": document, "rules": rules},
             ensure_ascii=False,
             indent=2,
         ) + "\n",

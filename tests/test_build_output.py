@@ -23,9 +23,12 @@ class GeneratedOutputTests(unittest.TestCase):
             index_path = SITE / document["index_path"]
             index = json.loads(index_path.read_text(encoding="utf-8"))
             index_validator.validate(index)
+            self.assertEqual(index["schema_version"], 2)
             ids = [rule["id"] for rule in index["rules"]]
             self.assertEqual(len(ids), len(set(ids)))
             self.assertTrue(all(rule["href"] == "#" + rule["id"] for rule in index["rules"]))
+            keys = [rule["rule_key"] for rule in index["rules"] if "rule_key" in rule]
+            self.assertEqual(len(keys), len(set(keys)))
 
     def test_every_indexed_clause_is_an_html_anchor(self):
         manifest = json.loads((SITE / "rules-manifest.json").read_text(encoding="utf-8"))
@@ -42,6 +45,20 @@ class GeneratedOutputTests(unittest.TestCase):
         purpose = next(rule for rule in rules if rule["id"] == "formula-competition-1")
         self.assertIn("본 규정은 대학생 자작자동차대회", purpose["text"])
         self.assertGreater(len(purpose["text"]), len("제1조 (목적)"))
+
+    def test_stable_rule_keys_resolve_to_current_clauses(self):
+        expected = {
+            ("formula-technical", "formula-technical.brake-light"): "formula-technical-10-9",
+            ("formula-technical", "formula-technical.grounding"): "formula-technical-48",
+            ("formula-competition", "formula-competition.vehicle-inspection"): "formula-competition-3",
+        }
+        for (document, rule_key), clause_id in expected.items():
+            document_dir = SITE / "2026" / document
+            index = json.loads((document_dir / "rules-index.json").read_text(encoding="utf-8"))
+            rule = next(rule for rule in index["rules"] if rule.get("rule_key") == rule_key)
+            self.assertEqual(rule["id"], clause_id)
+            soup = BeautifulSoup((document_dir / "index.html").read_text(encoding="utf-8"), "html.parser")
+            self.assertEqual(soup.find(id=clause_id)["data-rule-key"], rule_key)
 
     def test_catalog_only_trusts_official_source_urls(self):
         catalog = json.loads((ROOT / "rules" / "catalog.json").read_text(encoding="utf-8"))
