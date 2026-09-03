@@ -550,7 +550,7 @@ def render_document(
     <button class="icon-button" id="toc-toggle" type="button" aria-label="목차" title="목차" aria-controls="toc" aria-expanded="false">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
     </button>
-    <a class="brand" href="../../?choose=1" aria-label="규정 선택">FSK Rules</a>
+    <a class="brand" href="../../" aria-label="규정 선택">FSK Rules</a>
     <div class="document-selectors">
       <label><span>연도</span><select id="edition-select" aria-label="연도 선택"></select></label>
       <label><span>문서</span><select id="document-select" aria-label="문서 선택"></select></label>

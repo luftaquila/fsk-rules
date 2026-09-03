@@ -106,7 +106,7 @@ def render_home(catalog: dict) -> str:
   <script defer src="home.js"></script>
 </head>
 <body class="home-page">
-  <header class="home-header"><a class="brand" href="?choose=1">FSK 규정</a></header>
+  <header class="home-header"><a class="brand" href="./">FSK 규정</a></header>
   <main class="home-main">
     <h1>Formula Student Korea 규정</h1>
     <div class="edition-list">{''.join(edition_sections)}</div>
