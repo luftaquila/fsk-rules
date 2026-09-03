@@ -12,10 +12,16 @@
 
   const toc = document.getElementById("toc");
   const tocToggle = document.getElementById("toc-toggle");
+  const desktopToc = matchMedia("(min-width: 1024px)");
   const syncTocAccessibility = () => {
     const visible = toc.classList.contains("open");
     toc.inert = !visible;
     toc.setAttribute("aria-hidden", String(!visible));
+  };
+  const openToc = () => {
+    toc.classList.add("open");
+    tocToggle.setAttribute("aria-expanded", "true");
+    syncTocAccessibility();
   };
   const closeToc = () => {
     toc.classList.remove("open");
@@ -32,10 +38,10 @@
     tocToggle.focus();
   });
   toc.addEventListener("click", event => {
-    if (event.target.closest("a")) closeToc();
+    if (!desktopToc.matches && event.target.closest("a")) closeToc();
   });
   document.addEventListener("click", event => {
-    if (toc.classList.contains("open") && !toc.contains(event.target) && !tocToggle.contains(event.target)) {
+    if (!desktopToc.matches && toc.classList.contains("open") && !toc.contains(event.target) && !tocToggle.contains(event.target)) {
       closeToc();
     }
   });
@@ -45,7 +51,9 @@
       tocToggle.focus();
     }
   });
-  syncTocAccessibility();
+  const syncTocMode = () => desktopToc.matches ? openToc() : closeToc();
+  desktopToc.addEventListener("change", syncTocMode);
+  syncTocMode();
 
   const themeButton = document.getElementById("theme-toggle");
   const savedTheme = localStorage.getItem(storage.theme);

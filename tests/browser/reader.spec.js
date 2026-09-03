@@ -136,19 +136,38 @@ test("reader offers document switching and stable clause anchors", async ({ page
   await expect(themeButton.locator("svg circle")).toHaveCount(1);
 });
 
-test("reader can open its table of contents", async ({ page }) => {
+test("reader keeps its table of contents open according to the viewport", async ({ page }) => {
   await page.goto("/2026/formula-competition/");
   const toc = page.locator("#toc");
   const toggle = page.getByRole("button", { name: "목차", exact: true });
-  expect(await toc.evaluate(element => element.inert)).toBe(true);
-  await toggle.click();
+  const persistent = page.viewportSize().width >= 1024;
+
+  if (!persistent) {
+    expect(await toc.evaluate(element => element.inert)).toBe(true);
+    await toggle.click();
+  }
+
   await expect(toc).toHaveClass(/open/);
   await expect(toc).toHaveAttribute("aria-hidden", "false");
   await expect(page.locator("#toc nav a").first()).toBeVisible();
   await page.locator("#toc nav a").first().click();
   await expect(page.locator("#back-to-position")).toBeHidden();
-  await toggle.click();
   await page.mouse.click(page.viewportSize().width - 4, page.viewportSize().height / 2);
+
+  if (persistent) {
+    const layout = await page.evaluate(() => {
+      const tocRect = document.getElementById("toc").getBoundingClientRect();
+      const contentRect = document.getElementById("rules-content").getBoundingClientRect();
+      return { tocRight: tocRect.right, contentLeft: contentRect.left, contentWidth: contentRect.width };
+    });
+    expect(layout.contentLeft).toBeGreaterThanOrEqual(layout.tocRight);
+    expect(layout.contentWidth).toBeGreaterThan(820);
+    await expect(toc).toHaveClass(/open/);
+    await expect(toc).toHaveAttribute("aria-hidden", "false");
+    expect(await toc.evaluate(element => element.inert)).toBe(false);
+    await toggle.click();
+  }
+
   await expect(toc).not.toHaveClass(/open/);
   expect(await toc.evaluate(element => element.inert)).toBe(true);
   await toggle.click();
