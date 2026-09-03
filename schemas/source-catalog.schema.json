@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://luftaquila.github.io/fsk-rules/schemas/source-catalog.schema.json",
+  "title": "FSK rules source catalog",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "latest_edition", "documents"],
+  "properties": {
+    "schema_version": { "const": 2 },
+    "latest_edition": { "type": "integer", "minimum": 2000 },
+    "documents": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["edition", "revision", "document", "title", "short_title", "tex", "entrypoint", "assets", "pdf_source", "aux_source", "pdf_filename", "effective_date", "source"],
+        "properties": {
+          "edition": { "type": "integer", "minimum": 2000 },
+          "revision": { "type": "integer", "minimum": 1 },
+          "document": { "enum": ["formula-technical", "formula-competition"] },
+          "title": { "type": "string", "minLength": 1 },
+          "short_title": { "type": "string", "minLength": 1 },
+          "tex": { "type": "string", "minLength": 1 },
+          "entrypoint": { "type": "string", "minLength": 1 },
+          "assets": { "type": "string", "minLength": 1 },
+          "pdf_source": { "type": "string", "minLength": 1 },
+          "aux_source": { "type": "string", "minLength": 1 },
+          "pdf_filename": { "type": "string", "pattern": "^[a-z0-9.-]+\\.pdf$" },
+          "effective_date": { "type": "string", "format": "date" },
+          "source": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["status", "post_id", "published_date", "post_url", "attachment_url", "pdf_hash"],
+            "properties": {
+              "status": { "const": "verified" },
+              "post_id": { "type": "integer" },
+              "published_date": { "type": "string", "format": "date" },
+              "post_url": { "type": "string", "pattern": "^https://www\\.ksae\\.org/jajak/bbs/" },
+              "attachment_url": { "type": "string", "pattern": "^https://www\\.ksae\\.org/jajak/func/download\\.php\\?" },
+              "pdf_hash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

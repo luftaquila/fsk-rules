@@ -15,6 +15,7 @@ import tempfile
 import unicodedata
 from pathlib import Path
 
+import pypandoc
 from bs4 import BeautifulSoup, Tag
 
 
@@ -255,7 +256,7 @@ def run_pandoc(source: str) -> str:
         input_path = Path(directory) / "rules.tex"
         input_path.write_text(source, encoding="utf-8")
         command = [
-            "pandoc",
+            pypandoc.get_pandoc_path(),
             "--from=latex+raw_tex",
             "--to=html5",
             # Native MathML keeps ordinary parenthesized text out of the math
@@ -267,8 +268,8 @@ def run_pandoc(source: str) -> str:
         ]
         try:
             result = subprocess.run(command, check=True, capture_output=True, text=True)
-        except FileNotFoundError as error:
-            raise SystemExit("pandoc가 필요합니다. pandoc를 설치한 뒤 다시 빌드하세요.") from error
+        except (FileNotFoundError, OSError) as error:
+            raise SystemExit("requirements.txt에 고정된 Pandoc을 설치한 뒤 다시 빌드하세요.") from error
         except subprocess.CalledProcessError as error:
             raise SystemExit(f"pandoc 변환 실패:\n{error.stderr}") from error
         if result.stderr.strip():

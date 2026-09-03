@@ -4,18 +4,37 @@
   "title": "FSK rules manifest",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "latest_edition", "documents"],
+  "required": ["schema_version", "latest_edition", "deployment", "documents"],
   "properties": {
-    "schema_version": { "const": 1 },
+    "schema_version": { "const": 2 },
     "latest_edition": { "type": "integer", "minimum": 2000 },
+    "deployment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["site_tag", "source_commit"],
+      "properties": {
+        "site_tag": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "string", "pattern": "^site-[0-9]{8}\\.[1-9][0-9]*$" }
+          ]
+        },
+        "source_commit": { "type": "string", "pattern": "^[a-f0-9]{40}$" }
+      }
+    },
     "documents": {
       "type": "array",
+      "minItems": 1,
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["edition", "document", "title", "short_title", "effective_date", "web_path", "pdf_path", "index_path", "source"],
+        "required": ["edition", "revision", "version", "release_tag", "document_digest", "document", "title", "short_title", "effective_date", "web_path", "pdf_path", "index_path", "source"],
         "properties": {
           "edition": { "type": "integer", "minimum": 2000 },
+          "revision": { "type": "integer", "minimum": 1 },
+          "version": { "type": "string", "pattern": "^[0-9]{4}-r[1-9][0-9]*$" },
+          "release_tag": { "type": "string", "pattern": "^formula-(technical|competition)-[0-9]{4}-r[1-9][0-9]*$" },
+          "document_digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
           "document": { "enum": ["formula-technical", "formula-competition"] },
           "title": { "type": "string" },
           "short_title": { "type": "string" },

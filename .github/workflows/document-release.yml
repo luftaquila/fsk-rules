@@ -1,0 +1,64 @@
+name: Release document
+
+on:
+  push:
+    tags:
+      - "formula-technical-*-r*"
+      - "formula-competition-*-r*"
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: document-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml
+
+  release:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Require a release commit from main
+        run: |
+          git fetch origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+
+      - name: Validate document tag and revision
+        run: python scripts/release_contract.py check-tag --tag "$GITHUB_REF_NAME"
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: build-output
+          path: build
+
+      - name: Package immutable document artifacts
+        run: >-
+          python scripts/release_contract.py package-document
+          --site build/_site
+          --output release-assets
+          --tag "$GITHUB_REF_NAME"
+          --source-commit "$GITHUB_SHA"
+
+      - name: Attest document artifacts
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-path: release-assets/*
+
+      - name: Create document Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "$GITHUB_REF_NAME" release-assets/*
+          --verify-tag
+          --latest=false
+          --title "$GITHUB_REF_NAME"
+          --generate-notes

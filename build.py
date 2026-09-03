@@ -6,12 +6,21 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import re
 import shutil
 import subprocess
 from argparse import Namespace
 from pathlib import Path
 
 from tex2html import convert
+from scripts.release_contract import (
+    document_digest,
+    document_tag,
+    document_version,
+    git_head,
+    validate_catalog,
+    validate_source_commit,
+)
 
 
 ROOT = Path(__file__).resolve().parent
@@ -20,6 +29,7 @@ CATALOG = ROOT / "rules" / "catalog.json"
 
 def load_catalog() -> dict:
     catalog = json.loads(CATALOG.read_text(encoding="utf-8"))
+    validate_catalog(catalog)
     keys: set[tuple[int, str]] = set()
     for document in catalog["documents"]:
         key = (int(document["edition"]), document["document"])
@@ -50,6 +60,10 @@ def public_document(entry: dict) -> dict:
     base = f'{entry["edition"]}/{entry["document"]}'
     return {
         "edition": entry["edition"],
+        "revision": entry["revision"],
+        "version": document_version(entry),
+        "release_tag": document_tag(entry),
+        "document_digest": document_digest(entry, ROOT),
         "document": entry["document"],
         "title": entry["title"],
         "short_title": entry["short_title"],
@@ -132,6 +146,10 @@ def render_legacy_redirect(catalog: dict) -> str:
 
 def build(args: argparse.Namespace) -> None:
     catalog = load_catalog()
+    source_commit = args.source_commit or git_head(ROOT)
+    validate_source_commit(source_commit)
+    if args.site_tag is not None and not re.fullmatch(r"site-\d{8}\.[1-9]\d*", args.site_tag):
+        raise ValueError("site tag 형식이 올바르지 않습니다.")
     output = args.output.resolve()
     if output in {Path("/"), Path.home().resolve(), ROOT}:
         raise ValueError(f"안전하지 않은 출력 디렉터리입니다: {output}")
@@ -165,8 +183,12 @@ def build(args: argparse.Namespace) -> None:
         )
 
     public_catalog = {
-        "schema_version": 1,
+        "schema_version": 2,
         "latest_edition": catalog["latest_edition"],
+        "deployment": {
+            "site_tag": args.site_tag,
+            "source_commit": source_commit,
+        },
         "documents": [public_document(entry) for entry in catalog["documents"]],
     }
     (output / "rules-manifest.json").write_text(
@@ -209,6 +231,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output", type=Path, default=ROOT / "_site")
     parser.add_argument("--skip-pdf", action="store_true", help="이미 컴파일된 PDF를 사용")
     parser.add_argument("--allow-missing-pdf", action="store_true", help="HTML 검증용으로 PDF 없이 빌드")
+    parser.add_argument("--source-commit", help="manifest에 기록할 40자리 Git commit SHA")
+    parser.add_argument("--site-tag", help="승인된 운영 배포 태그(site-YYYYMMDD.N)")
     return parser.parse_args()
 
 
