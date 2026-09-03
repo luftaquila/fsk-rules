@@ -573,6 +573,18 @@ select {
   white-space: nowrap;
 }
 
+@media (min-width: 1024px) {
+  .rules-content {
+    max-width: 960px;
+  }
+
+  .toc-panel.open + .rules-content {
+    margin-left: calc(288px + max(20px, (100vw - 1248px) / 2));
+    margin-right: 0;
+    width: min(960px, calc(100vw - 328px));
+  }
+}
+
 @media (max-width: 900px) {
   :root {
     --toolbar-height: 60px;
