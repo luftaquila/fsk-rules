@@ -20,7 +20,12 @@
           "rule_key": { "type": "string", "pattern": "^formula-(technical|competition)\\.[a-z0-9]+([.-][a-z0-9]+)*$" },
           "clause_id": { "type": "string", "pattern": "^formula-(technical|competition)-[a-z0-9-]+$" },
           "citation": { "type": "string", "minLength": 3 },
-          "source_hash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+          "source_hash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+          "release_tag": {
+            "description": "Document Release the reference was last resolved against, e.g. formula-technical-2026-r2. Optional provenance; content identity is still source_hash.",
+            "type": "string",
+            "pattern": "^formula-(technical|competition)-[0-9]{4}-r[1-9][0-9]*$"
+          }
         },
         "allOf": [
           {
@@ -28,7 +33,8 @@
             "then": {
               "properties": {
                 "rule_key": { "pattern": "^formula-technical\\." },
-                "clause_id": { "pattern": "^formula-technical-" }
+                "clause_id": { "pattern": "^formula-technical-" },
+                "release_tag": { "pattern": "^formula-technical-" }
               }
             }
           },
@@ -37,7 +43,8 @@
             "then": {
               "properties": {
                 "rule_key": { "pattern": "^formula-competition\\." },
-                "clause_id": { "pattern": "^formula-competition-" }
+                "clause_id": { "pattern": "^formula-competition-" },
+                "release_tag": { "pattern": "^formula-competition-" }
               }
             }
           }

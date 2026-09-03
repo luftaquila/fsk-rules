@@ -12,13 +12,14 @@
       "rule_key": "formula-technical.brake-light",
       "clause_id": "formula-technical-10-9",
       "citation": "제10조 9항",
-      "source_hash": "sha256:..."
+      "source_hash": "sha256:...",
+      "release_tag": "formula-technical-2026-r2"
     }
   ]
 }
 ```
 
-`rule_key`는 조항 번호가 바뀌어도 유지하는 의미 기반 영구 키입니다. `clause_id`와 `citation`은 해당 연도의 실제 번호이며 `rule_key`로 새 연도 인덱스를 조회해 갱신합니다. `source_hash`는 해당 `rules-index.json` 엔트리의 `content_hash`입니다. 공식 PDF 전체의 `pdf_hash`와는 목적이 다릅니다. 참조 배열은 한 문항이 여러 조항을 가리킬 수 있게 하며, 직접 대응 규정이 없는 운영 문항은 아래처럼 명시합니다.
+`rule_key`는 조항 번호가 바뀌어도 유지하는 의미 기반 영구 키입니다. `clause_id`와 `citation`은 해당 연도의 실제 번호이며 `rule_key`로 새 연도 인덱스를 조회해 갱신합니다. `source_hash`는 해당 `rules-index.json` 엔트리의 `content_hash`입니다. 공식 PDF 전체의 `pdf_hash`와는 목적이 다릅니다. 선택 필드 `release_tag`는 참조를 마지막으로 해석한 문서 Release(매니페스트의 `release_tag`)를 기록하는 출처 정보입니다. 내용 동일성 판단 기준은 여전히 `source_hash`이므로, Release가 바뀌어도 해시가 같으면 링크를 유지하고 해시가 다르면 `needs_review`로 내립니다. 참조 배열은 한 문항이 여러 조항을 가리킬 수 있게 하며, 직접 대응 규정이 없는 운영 문항은 아래처럼 명시합니다.
 
 `content_hash`는 조항의 표시 텍스트를 Unicode NFC로 정규화하고 연속 공백을 하나로 만든 값에, 조항에 포함된 이미지의 SHA-256을 더해 계산합니다. 내부 참조의 표시 문구는 대상 앵커 ID로 정규화합니다. `edition`, 현재 조항 ID, 인용 표기는 해시 입력에서 제외하므로 다음 연도에 내용이 그대로인지를 비교할 수 있습니다. 인덱스 스키마 v2는 조 제목 앞에 자동 생성된 `제N조`도 해시에서 제외합니다. 상위 항과 조 단위 해시는 그 아래 하위 조항 전체를 포함합니다.
 
