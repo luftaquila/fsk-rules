@@ -13,6 +13,7 @@ from jsonschema import Draft202012Validator
 
 from scripts.download_build_assets import install, verified_download
 from scripts.release_contract import (
+    check_rule_key_continuity,
     document_digest,
     extract_site,
     package_document,
@@ -205,6 +206,48 @@ class RevisionTests(unittest.TestCase):
         with patch("scripts.release_contract.document_digest", return_value=new_digest):
             with self.assertRaisesRegex(ValueError, "연속적이지"):
                 version_state(catalog, [tag, "formula-technical-2026-r3"], manifests)
+
+
+class RuleKeyContinuityTests(unittest.TestCase):
+    def index(self, *keys: str) -> dict:
+        return {
+            "schema_version": 2,
+            "edition": 2026,
+            "document": "formula-technical",
+            "rules": [{"id": f"formula-technical-{n}", "rule_key": key} for n, key in enumerate(keys, start=1)],
+        }
+
+    def test_released_rule_keys_may_only_disappear_when_declared_retired(self):
+        entry = catalog_entry("formula-technical", 1)
+        previous = self.index("formula-technical.brake-light", "formula-technical.grounding")
+        result = check_rule_key_continuity(
+            entry, previous, self.index("formula-technical.brake-light", "formula-technical.grounding", "formula-technical.wheels")
+        )
+        self.assertEqual(result["added"], ["formula-technical.wheels"])
+        self.assertEqual(result["retired"], [])
+
+        with self.assertRaisesRegex(ValueError, "선언 없이 제거"):
+            check_rule_key_continuity(entry, previous, self.index("formula-technical.brake-light"))
+
+        entry["retired_rule_keys"] = ["formula-technical.grounding"]
+        result = check_rule_key_continuity(entry, previous, self.index("formula-technical.brake-light"))
+        self.assertEqual(result["retired"], ["formula-technical.grounding"])
+
+        with self.assertRaisesRegex(ValueError, "아직 존재합니다"):
+            check_rule_key_continuity(entry, previous, previous)
+
+    def test_catalog_rejects_malformed_retired_rule_keys(self):
+        catalog = {
+            "schema_version": 2,
+            "latest_edition": 2026,
+            "documents": [catalog_entry("formula-technical", 1), catalog_entry("formula-competition", 2)],
+        }
+        catalog["documents"][0]["retired_rule_keys"] = ["formula-technical.brake-light"]
+        validate_catalog(catalog)
+        for retired in (["formula-competition.brake-light"], ["formula-technical.brake light"], ["a", "a"]):
+            catalog["documents"][0]["retired_rule_keys"] = retired
+            with self.assertRaisesRegex(ValueError, "retired_rule_keys"):
+                validate_catalog(catalog)
 
 
 class PackagingTests(unittest.TestCase):

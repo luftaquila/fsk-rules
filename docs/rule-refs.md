@@ -40,15 +40,26 @@
 
 ## 영구 키 작성
 
-외부 문항에서 참조할 조항은 LaTeX의 해당 `\section` 또는 `\item` 바로 뒤에 영구 키 라벨을 추가합니다.
+인덱스에 들어가는 모든 조항(`\section`과 번호가 붙는 `enumerate` 항목)은 LaTeX의 해당 `\section` 또는 `\item` 바로 뒤에 정확히 하나의 영구 키 라벨을 갖습니다. `itemize` 설명, 그림, 표, 부칙은 인덱스 대상이 아니므로 키를 붙이지 않습니다.
 
 ```tex
-\item 제동등 (Brake Light)
-  \label{item:제동등}
-  \label{rule:formula-technical.brake-light}
+\section{제동장치 - Brake System}\label{rule:formula-technical.brake-system}
+\begin{enumerate}
+  \item\label{rule:formula-technical.brake-system.single-pedal-four-wheel} 차량은 하나의 페달로 네 바퀴에 ...
+  \item 제동등 (Brake Light) \label{item:제동등}\label{rule:formula-technical.brake-light}
+    \begin{enumerate}
+      \item\label{rule:formula-technical.brake-light.visible-in-sunlight} 차량은 태양빛 아래에서도 ...
 ```
 
-`formula-technical.` 또는 `formula-competition.` 문서 접두사와 영문 소문자, 숫자, 점, 하이픈만 사용합니다. 이 키는 연도와 조항 번호를 포함하지 않으며 다음 연도 소스에서도 같은 값을 유지합니다. 사이트 빌드는 형식 오류, 문서 접두사 불일치, 중복 키, 하나의 조항에 여러 키가 붙은 경우를 실패로 처리합니다. 모든 조항에 키를 붙일 필요는 없지만, `verified` 참조를 생성하려는 조항에는 먼저 키를 부여해야 합니다.
+키 규칙은 다음과 같습니다.
+
+- `formula-technical.` 또는 `formula-competition.` 문서 접두사 뒤에 영문 소문자, 숫자, 점, 하이픈만 사용하며 전체 길이는 100자 이하입니다.
+- 조항의 의미를 영어로 요약한 kebab-case 구간을 상위 조항의 키 뒤에 점으로 이어 붙입니다. 예: `formula-technical.brake-light.visible-in-sunlight`.
+- 연도, 조항 번호, 순번, 내용 해시를 쓰지 않습니다. 점이나 하이픈으로 나뉜 각 부분에는 글자가 하나 이상 있어야 하므로 `1-4-2`, `item-3`, `2026` 같은 부분은 빌드가 거부합니다. `15cm2`, `80kw`처럼 단위에 붙은 숫자는 허용됩니다.
+- 한 번 Release된 키는 오탈자가 있어도 이름을 바꾸지 않습니다. 소비자가 그 키를 저장하고 있습니다.
+- 조항이 삭제되거나 분리·병합되어 키가 사라지면 `rules/catalog.json` 문서 항목의 `retired_rule_keys`에 그 키를 선언합니다. CI는 이전 Release의 `rules-index.json`과 비교해 선언되지 않은 키 제거를 실패로 처리하고, 선언된 키가 아직 존재하는 경우도 실패로 처리합니다.
+
+사이트 빌드는 형식 오류, 번호만으로 된 부분, 길이 초과, 문서 접두사 불일치, 중복 키, 하나의 조항에 여러 키가 붙은 경우를 실패로 처리하며, 생성된 인덱스에 키가 없는 조항이 남아 있으면 테스트가 실패합니다. 빌드 워크플로는 `citation`, 조항 ID, `rule_key`, 본문을 나열한 `rule-keys-report` 아티팩트를 남기므로 PR 검토 시 함께 확인합니다.
 
 ## URL 조립
 

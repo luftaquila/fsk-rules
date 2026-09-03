@@ -17,6 +17,7 @@ from tex2html import (
     preprocess_tex,
     resolve_html_reference_labels,
     strip_color_groups,
+    validate_rule_key,
     validate_rule_key_labels,
 )
 
@@ -153,6 +154,36 @@ class RuleIndexTests(unittest.TestCase):
             r"\item 제동등\label{rule:formula-technical.brake-light}",
             "formula-technical",
         )
+
+    def test_rule_key_rejects_number_only_parts_and_excessive_length(self):
+        for rule_key in (
+            "formula-technical.brake-system.9",
+            "formula-technical.brake-system.item-3",
+            "formula-technical.brake-light.1-4-2",
+            "formula-technical.2026.brake-light",
+        ):
+            with self.assertRaisesRegex(ValueError, "번호만으로 된 부분", msg=rule_key):
+                validate_rule_key(rule_key, "formula-technical")
+        for rule_key in (
+            "formula-technical.brake-light.min-area-15cm2",
+            "formula-technical.fuel.e85",
+            "formula-competition.endurance.max-power-80kw",
+        ):
+            validate_rule_key(rule_key, rule_key.split(".", 1)[0])
+
+        too_long = "formula-technical." + ".".join(["segment"] * 12)
+        with self.assertRaisesRegex(ValueError, "100자를 넘음"):
+            validate_rule_key(too_long, "formula-technical")
+
+        with self.assertRaisesRegex(ValueError, "번호만으로 된 부분"):
+            validate_rule_key_labels(r"\item 제동등\label{rule:formula-technical.brake-light.1}", "formula-technical")
+        fragment = """
+        <h2>제1조 (제동장치)</h2><ol>
+          <li>제동등 <span id="rule-formula-technical.brake-light.1"></span></li>
+        </ol>
+        """
+        with self.assertRaisesRegex(ValueError, "번호만으로 된 부분"):
+            annotate_rules(fragment, 2026, "formula-technical")
 
     def test_article_hash_covers_its_body(self):
         _, first = annotate_rules("<h2>제1조 (목적)</h2><p>첫 내용</p>", 2026, "formula-technical")

@@ -26,6 +26,7 @@ RULE_KEY_ANCHOR_PREFIX = "rule-"
 RULE_KEY_PATTERN = re.compile(
     r"^formula-(?:technical|competition)\.[a-z0-9]+(?:[.-][a-z0-9]+)*$"
 )
+RULE_KEY_MAX_LENGTH = 100
 
 
 def parse_nested_braces(source: str, start: int) -> tuple[str, int]:
@@ -85,16 +86,28 @@ def resolve_references(source: str, labels: dict[str, str]) -> str:
     return re.sub(r"\\pageref\{[^}]+\}", "", source)
 
 
+def validate_rule_key(rule_key: str, document: str) -> None:
+    """Reject keys that could not survive renumbering or that no consumer can store."""
+    if not RULE_KEY_PATTERN.fullmatch(rule_key):
+        raise ValueError(f"잘못된 영구 규정 키: {rule_key}")
+    if len(rule_key) > RULE_KEY_MAX_LENGTH:
+        raise ValueError(f"영구 규정 키가 {RULE_KEY_MAX_LENGTH}자를 넘음: {rule_key}")
+    # A digit-only part is a clause number, ordinal, or year in disguise and
+    # would silently break when the document is renumbered.
+    body = rule_key.split(".", 1)[1]
+    if any(not re.search(r"[a-z]", part) for part in re.split(r"[.-]", body)):
+        raise ValueError(f"영구 규정 키에 번호만으로 된 부분이 있음: {rule_key}")
+    if not rule_key.startswith(f"{document}."):
+        raise ValueError(f"문서와 영구 규정 키가 일치하지 않음: {document}, {rule_key}")
+
+
 def validate_rule_key_labels(source: str, document: str) -> None:
     """Validate stable keys before generic LaTeX label normalization runs."""
     source_without_comments = re.sub(r"(?<!\\)%.*$", "", source, flags=re.MULTILINE)
     seen: set[str] = set()
     for match in re.finditer(r"\\label\{rule:([^}]*)\}", source_without_comments):
         rule_key = match.group(1)
-        if not RULE_KEY_PATTERN.fullmatch(rule_key):
-            raise ValueError(f"잘못된 영구 규정 키: {rule_key}")
-        if not rule_key.startswith(f"{document}."):
-            raise ValueError(f"문서와 영구 규정 키가 일치하지 않음: {document}, {rule_key}")
+        validate_rule_key(rule_key, document)
         if rule_key in seen:
             raise ValueError(f"중복 영구 규정 키: {rule_key}")
         seen.add(rule_key)
@@ -358,10 +371,7 @@ def assign_rule_keys(soup: BeautifulSoup, rules: list[dict], document: str) -> N
     for marker in soup.find_all(id=lambda value: value and str(value).startswith(RULE_KEY_ANCHOR_PREFIX)):
         anchor = str(marker["id"])
         rule_key = anchor[len(RULE_KEY_ANCHOR_PREFIX) :]
-        if not RULE_KEY_PATTERN.fullmatch(rule_key):
-            raise ValueError(f"잘못된 영구 규정 키: {rule_key}")
-        if not rule_key.startswith(f"{document}."):
-            raise ValueError(f"문서와 영구 규정 키가 일치하지 않음: {document}, {rule_key}")
+        validate_rule_key(rule_key, document)
         if rule_key in seen:
             raise ValueError(f"중복 영구 규정 키: {rule_key}")
 
