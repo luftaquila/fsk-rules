@@ -4,11 +4,8 @@
   const config = JSON.parse(document.getElementById("rules-config").textContent);
   const root = new URL("../../", window.location.href);
   const storage = {
-    lastDocument: "fsk-rules:last-document",
     theme: "fsk-rules:theme"
   };
-
-  localStorage.setItem(storage.lastDocument, `${config.edition}/${config.document}/`);
 
   const toc = document.getElementById("toc");
   const tocToggle = document.getElementById("toc-toggle");

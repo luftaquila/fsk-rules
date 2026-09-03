@@ -5,11 +5,13 @@ test.beforeEach(async ({ page }) => {
     if (route.request().resourceType() === "image") return route.abort();
     return route.continue();
   });
-  await page.addInitScript(() => localStorage.clear());
 });
 
 test("selection home exposes both 2026 rule documents", async ({ page }) => {
-  await page.goto("/?choose=1");
+  await page.goto("/");
+  await page.evaluate(() => localStorage.setItem("fsk-rules:last-document", "2026/formula-technical/"));
+  await page.reload();
+  await expect(page).toHaveURL(/\/$/);
   await expect(page.getByRole("heading", { name: "차량기술규정" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "경기진행규정" })).toBeVisible();
   await expect(page.getByRole("link", { name: "원문" })).toHaveCount(2);
