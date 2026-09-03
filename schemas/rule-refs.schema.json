@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://luftaquila.github.io/fsk-rules/schemas/rule-refs.schema.json",
+  "title": "sheet_template rule_refs",
+  "description": "Consumer-side JSON column contract. source_hash is the referenced rule entry's content_hash, not the source PDF hash.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status", "references"],
+  "properties": {
+    "status": { "enum": ["verified", "needs_review", "no_direct_rule"] },
+    "references": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["edition", "document", "clause_id", "citation", "source_hash"],
+        "properties": {
+          "edition": { "type": "integer", "minimum": 2000 },
+          "document": { "enum": ["formula-technical", "formula-competition"] },
+          "clause_id": { "type": "string", "pattern": "^formula-(technical|competition)-[a-z0-9-]+$" },
+          "citation": { "type": "string", "minLength": 3 },
+          "source_hash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "verified" } } },
+      "then": { "properties": { "references": { "minItems": 1 } } }
+    },
+    {
+      "if": { "properties": { "status": { "const": "no_direct_rule" } } },
+      "then": { "properties": { "references": { "maxItems": 0 } } }
+    }
+  ]
+}

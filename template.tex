@@ -1,4 +1,6 @@
 % packages
+\tracinglostchars=3
+
 \usepackage{tikz}
 \usepackage{float}
 \usepackage{kotex}
@@ -27,16 +29,17 @@
 \usepackage[margin=2cm,bottom=3.5cm]{geometry}
 
 % fonts
-\setmainfont{HCR Batang}[
-  BoldFont        = {HCR Batang Bold},
-  ItalicFont      = {HCR Batang},
+\setmainfont{Pretendard}[
+  BoldFont        = {Pretendard Bold},
+  ItalicFont      = {Pretendard},
   ItalicFeatures  = {FakeSlant=0.2},
   LetterSpace=3
 ]
+\setmainhanjafont{Noto Sans CJK KR}
 
 \linespread{1.3}\selectfont
 
-\newfontfamily\textb{HCR Batang Bold}
+\newfontfamily\textb{Pretendard Bold}
 \newfontfamily\pretendard{Pretendard}
 \newfontfamily\pretendardb{Pretendard Bold}
 
@@ -189,6 +192,9 @@
 
 % figures
 
+\providecommand{\RuleAssetPath}{assets/formula}
+\providecommand{\RuleIndexStart}{}
+\providecommand{\RuleIndexEnd}{}
 \graphicspath{{assets/}}
 \captionsetup[figure]{
   name=그림,
@@ -200,7 +206,7 @@
 \newcommand{\fig}[3]{
   \begin{figure}[H]
     \centering
-    \includegraphics[width=#3\linewidth]{#2/#1.jpg}
+    \includegraphics[width=#3\linewidth]{\RuleAssetPath/#1.jpg}
     \caption{#1}\label{fig:#1}
   \end{figure}
 }

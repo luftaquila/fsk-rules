@@ -8,72 +8,87 @@ on:
 
 permissions:
   contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Install fonts
-      run: |
-        mkdir -p fonts
-        wget -q --referer="https://www.hancom.com/" https://cdn.hancom.com/pds/docs/HancomFont.zip
-        unzip -q HancomFont.zip HCRBatang.ttf HCRBatang-Bold.ttf
-        mv HCRBatang*.ttf fonts/
-        wget -q https://github.com/orioncactus/pretendard/releases/download/v1.3.9/Pretendard-1.3.9.zip
-        unzip -q Pretendard-1.3.9.zip
-        mv public/static/alternative/*.ttf fonts/
-        wget -q https://github.com/notofonts/noto-cjk/raw/refs/heads/main/Sans/OTF/TraditionalChinese/NotoSansCJKtc-Regular.otf
-        mv *.otf fonts/
+      - name: Install PDF fonts
+        run: |
+          mkdir -p fonts
+          wget -q https://github.com/orioncactus/pretendard/releases/download/v1.3.9/Pretendard-1.3.9.zip
+          unzip -q Pretendard-1.3.9.zip
+          mv public/static/alternative/*.ttf fonts/
+          wget -q https://github.com/notofonts/noto-cjk/raw/refs/heads/main/Sans/OTF/Korean/NotoSansCJKkr-Regular.otf
+          mv *.otf fonts/
 
-    - name: Compile PDF
-      uses: xu-cheng/latex-action@v3
-      with:
-        root_file: formula.tex
-        latexmk_use_lualatex: true
-        extra_fonts: fonts/*
+      - name: Compile both rule PDFs
+        uses: xu-cheng/latex-action@v3
+        with:
+          root_file: |
+            formula.tex
+            competition.tex
+          latexmk_use_lualatex: true
+          extra_fonts: fonts/*
 
-    - name: Setup Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.x'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
-    - name: Install pandoc
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y pandoc
+      - name: Install web build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pandoc
+          python -m pip install -r requirements.txt
 
-    - name: Build HTML
-      run: |
-        python3 tex2html.py formula.tex formula.html
+      - name: Download web fonts
+        run: |
+          unzip -j -o Pretendard-1.3.9.zip web/static/woff2/Pretendard-Regular.woff2 web/static/woff2/Pretendard-Bold.woff2 -d fonts
+          curl --fail --silent --show-error --location "https://cdn.jsdelivr.net/fontsource/fonts/stix-two-math@latest/latin-400-normal.woff2" -o fonts/STIXTwoMath-Regular.woff2
 
-    - name: Download web fonts
-      run: |
-        mkdir -p _site/fonts
-        curl -sL "https://cdn.jsdelivr.net/fontsource/fonts/noto-sans-kr@latest/korean-400-normal.woff2" -o _site/fonts/NotoSansKR-Regular.woff2
-        curl -sL "https://cdn.jsdelivr.net/fontsource/fonts/noto-sans-kr@latest/korean-700-normal.woff2" -o _site/fonts/NotoSansKR-Bold.woff2
+      - name: Build catalog site and validate contracts
+        run: |
+          python build.py --skip-pdf
+          python -m unittest discover -s tests
 
-    - name: Prepare Pages
-      run: |
-        cp formula.html _site/index.html
-        cp formula.pdf _site/
-        cp style.css _site/
-        cp -r assets _site/ 2>/dev/null || true
+      - name: Install browser test dependencies
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
 
-    - name: Upload pages artifact
-      uses: actions/upload-pages-artifact@v3
-      with:
-        path: _site
+      - name: Test reader interactions
+        run: npm run test:web
 
-    - name: Upload build artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: build-output
-        path: |
-          formula.pdf
-          formula.html
-          style.css
-          assets/
-          _site/fonts/
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
 
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output
+          path: |
+            formula.pdf
+            competition.pdf
+            _site/
+
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'workflow_call'
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
