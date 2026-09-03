@@ -317,11 +317,14 @@ def canonical_article(heading: Tag, asset_dir: Path | None = None) -> tuple[str,
         if isinstance(sibling, Tag):
             nodes.append(sibling)
     text = normalize_text(" ".join(node.get_text(" ", strip=True) for node in nodes))
-    text_parts = [
-        canonical_node_text(node)
-        for node in nodes
-        if not str(node.get("id", "")).startswith(RULE_KEY_ANCHOR_PREFIX)
-    ]
+    text_parts: list[str] = []
+    for node in nodes:
+        if str(node.get("id", "")).startswith(RULE_KEY_ANCHOR_PREFIX):
+            continue
+        canonical_text = canonical_node_text(node)
+        if node is heading:
+            canonical_text = re.sub(r"^제\d+조(?:의\d+)?\s*", "", canonical_text, count=1)
+        text_parts.append(canonical_text)
     image_parts: list[str] = []
     if asset_dir:
         for node in nodes:

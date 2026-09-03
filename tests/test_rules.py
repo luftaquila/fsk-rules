@@ -79,6 +79,27 @@ class RuleIndexTests(unittest.TestCase):
         )
         self.assertIsNotNone(first_soup.find(id="rule-formula-technical.brake-light"))
 
+    def test_rule_key_and_hash_survive_an_article_number_change(self):
+        first_fragment = """
+        <h2>제1조 (접지)</h2><div id="rule-formula-technical.grounding"></div>
+        <p>접지 본문</p>
+        """
+        moved_fragment = """
+        <h2>제1조 (신설 조항)</h2><p>신설 본문</p>
+        <h2>제2조 (접지)</h2><div id="rule-formula-technical.grounding"></div>
+        <p>접지 본문</p>
+        """
+        _, first = annotate_rules(first_fragment, 2026, "formula-technical")
+        _, moved = annotate_rules(moved_fragment, 2027, "formula-technical")
+        first_rule = next(rule for rule in first if rule.get("rule_key") == "formula-technical.grounding")
+        moved_rule = next(rule for rule in moved if rule.get("rule_key") == "formula-technical.grounding")
+
+        self.assertEqual(first_rule["id"], "formula-technical-1")
+        self.assertEqual(moved_rule["id"], "formula-technical-2")
+        self.assertEqual(first_rule["content_hash"], moved_rule["content_hash"])
+        self.assertEqual(first_rule["text"], "제1조 (접지) 접지 본문")
+        self.assertEqual(moved_rule["text"], "제2조 (접지) 접지 본문")
+
     def test_article_can_have_a_rule_key(self):
         fragment = """
         <h2>제1조 (접지)</h2><div id="rule-formula-technical.grounding"></div>
