@@ -14,6 +14,7 @@ test("selection home exposes both 2026 rule documents", async ({ page }) => {
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByRole("heading", { name: "차량기술규정" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "경기진행규정" })).toBeVisible();
+  await expect(page.getByText("2026-v1", { exact: true })).toHaveCount(2);
   await expect(page.getByRole("link", { name: "원문" })).toHaveCount(2);
   await expect(page.locator(".home-description, .data-files")).toHaveCount(0);
   await expect(page.getByText("차량기술규정과 경기진행규정을 연도별로 확인할 수 있습니다.")).toHaveCount(0);
@@ -115,6 +116,7 @@ test("reader offers document switching and stable clause anchors", async ({ page
   await expect(page.locator("#formula-competition-11-12-5-1")).toBeVisible();
   await expect(page.locator(".anchor-copy")).toHaveCount(0);
   await expect(page.locator(".document-meta")).toHaveCount(0);
+  await expect(page.locator(".reader-version")).toHaveText("2026-v1");
   await expect(page.getByText("2026년판")).toHaveCount(0);
   await expect(page.locator("#search-toggle, #search-dialog")).toHaveCount(0);
   const pdfLink = page.getByRole("link", { name: "PDF" });
