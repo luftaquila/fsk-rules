@@ -89,6 +89,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     needs: prepare
+    if: ${{ always() && needs.prepare.result == 'success' }}
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

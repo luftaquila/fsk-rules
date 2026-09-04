@@ -348,6 +348,10 @@ class PackagingTests(unittest.TestCase):
 
 
 class BuildDependencyTests(unittest.TestCase):
+    def test_site_rollback_deploys_after_the_build_job_is_skipped(self):
+        workflow = (ROOT / ".github" / "workflows" / "site-release.yml").read_text(encoding="utf-8")
+        self.assertIn("if: ${{ always() && needs.prepare.result == 'success' }}", workflow)
+
     def test_document_build_toolchain_is_pinned_and_used_by_ci(self):
         dependencies = json.loads((ROOT / "build-dependencies.json").read_text(encoding="utf-8"))
         schema = json.loads((ROOT / "schemas" / "build-dependencies.schema.json").read_text(encoding="utf-8"))
