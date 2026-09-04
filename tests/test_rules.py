@@ -263,6 +263,23 @@ class RuleIndexTests(unittest.TestCase):
         apply_figure_widths(soup, r"\fig{제동등 위치}{formula}{0.6}")
         self.assertEqual(soup.img["style"], "width:60%")
 
+    def test_figure_caption_can_differ_from_asset_name(self):
+        source = (
+            r"\fig{앞 그림}{formula}{0.5}"
+            r"\figwithcaption{기존 파일명}{원문 캡션}{formula}{0.8}"
+            r"\fig{뒤 그림}{formula}{0.5}"
+        )
+        processed = preprocess_tex(source)
+        self.assertIn(r"\hypertarget{fig-기존-파일명}{}", processed)
+        self.assertIn(r"{assets/기존 파일명.jpg}", processed)
+        self.assertIn(r"\caption{그림 1. 앞 그림}", processed)
+        self.assertIn(r"\caption{그림 2. 원문 캡션}", processed)
+        self.assertIn(r"\caption{그림 3. 뒤 그림}", processed)
+
+        soup = BeautifulSoup('<p><img src="assets/기존 파일명.jpg"></p>', "html.parser")
+        apply_figure_widths(soup, source)
+        self.assertEqual(soup.img["style"], "width:80%")
+
 
 class ContractTests(unittest.TestCase):
     def validator(self, filename):

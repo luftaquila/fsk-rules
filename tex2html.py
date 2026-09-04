@@ -27,6 +27,10 @@ RULE_KEY_PATTERN = re.compile(
     r"^formula-(?:technical|competition)\.[a-z0-9]+(?:[.-][a-z0-9]+)*$"
 )
 RULE_KEY_MAX_LENGTH = 100
+FIGURE_PATTERN = re.compile(
+    r"\\figwithcaption\{([^}]+)\}\{([^}]+)\}\{([^}]+)\}\{([^}]+)\}"
+    r"|\\fig\{([^}]+)\}\{([^}]+)\}\{([^}]+)\}"
+)
 
 
 def parse_nested_braces(source: str, start: int) -> tuple[str, int]:
@@ -245,15 +249,19 @@ def preprocess_tex(source: str) -> str:
     def convert_figure(match: re.Match[str]) -> str:
         nonlocal figure
         figure += 1
-        caption, _folder, width = match.groups()
-        target = "fig-" + caption.replace(" ", "-")
+        if match.group(1) is not None:
+            asset, caption, _folder, width = match.group(1, 2, 3, 4)
+        else:
+            asset, _folder, width = match.group(5, 6, 7)
+            caption = asset
+        target = "fig-" + asset.replace(" ", "-")
         return (
             rf"\begin{{figure}}[H]\hypertarget{{{target}}}{{}}\centering "
-            rf"\includegraphics[width={width}\linewidth]{{assets/{caption}.jpg}}"
+            rf"\includegraphics[width={width}\linewidth]{{assets/{asset}.jpg}}"
             rf"\caption{{그림 {figure}. {caption}}}\end{{figure}}"
         )
 
-    source = re.sub(r"\\fig\{([^}]+)\}\{([^}]+)\}\{([^}]+)\}", convert_figure, source)
+    source = FIGURE_PATTERN.sub(convert_figure, source)
     source = re.sub(
         r"\\label\{([^}]+)\}",
         lambda match: rf"\hypertarget{{{match.group(1).replace(':', '-').replace(' ', '-')}}}{{}}",
@@ -531,16 +539,19 @@ def annotate_rules(
 
 
 def apply_figure_widths(soup: BeautifulSoup, source: str) -> None:
-    r"""Apply ``\fig`` widths independently of the installed Pandoc version."""
-    for match in re.finditer(r"\\fig\{([^}]+)\}\{[^}]+\}\{([^}]+)\}", source):
-        caption, raw_width = match.groups()
+    r"""Apply figure widths independently of the installed Pandoc version."""
+    for match in FIGURE_PATTERN.finditer(source):
+        if match.group(1) is not None:
+            asset, raw_width = match.group(1, 4)
+        else:
+            asset, raw_width = match.group(5, 7)
         try:
             percentage = float(raw_width) * 100
         except ValueError:
             continue
         if not 0 < percentage <= 100:
             continue
-        image = soup.find("img", src=f"assets/{caption}.jpg")
+        image = soup.find("img", src=f"assets/{asset}.jpg")
         if image is not None:
             image["style"] = f"width:{percentage:g}%"
 

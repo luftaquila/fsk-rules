@@ -210,6 +210,13 @@
     \caption{#1}\label{fig:#1}
   \end{figure}
 }
+\newcommand{\figwithcaption}[4]{
+  \begin{figure}[H]
+    \centering
+    \includegraphics[width=#4\linewidth]{\RuleAssetPath/#1.jpg}
+    \caption{#2}\label{fig:#1}
+  \end{figure}
+}
 
 % latexdiff
 \providecommand{\DIFadd}[1]{{\protect\color{blue}#1}} 
