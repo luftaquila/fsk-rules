@@ -21,10 +21,10 @@ class GeneratedOutputTests(unittest.TestCase):
         self.assertEqual(manifest["schema_version"], 2)
         self.assertRegex(manifest["deployment"]["source_commit"], r"^[a-f0-9]{40}$")
         for document in manifest["documents"]:
-            self.assertEqual(document["version"], f'{document["edition"]}-r{document["revision"]}')
+            self.assertEqual(document["version"], f'{document["edition"]}-v{document["revision"]}')
             self.assertEqual(
                 document["release_tag"],
-                f'{document["document"]}-{document["edition"]}-r{document["revision"]}',
+                f'{document["document"]}-{document["edition"]}-v{document["revision"]}',
             )
         index_validator = Draft202012Validator(self.load_schema("rules-index.schema.json"))
         for document in manifest["documents"]:

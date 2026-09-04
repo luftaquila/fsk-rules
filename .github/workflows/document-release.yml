@@ -3,8 +3,8 @@ name: Release document
 on:
   push:
     tags:
-      - "formula-technical-*-r*"
-      - "formula-competition-*-r*"
+      - "formula-technical-*-v*"
+      - "formula-competition-*-v*"
 
 permissions:
   contents: write
@@ -40,7 +40,7 @@ jobs:
           name: build-output
           path: build
 
-      - name: Package immutable document artifacts
+      - name: Package document artifacts
         run: >-
           python scripts/release_contract.py package-document
           --site build/_site
