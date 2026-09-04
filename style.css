@@ -558,11 +558,30 @@ select {
 }
 
 .document-name p,
-.document-row time {
+.document-release time {
   color: var(--color-muted);
   font-size: 13px;
   line-height: 1.55;
   margin: 0;
+}
+
+.document-release {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.document-release strong,
+.reader-version {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.reader-version {
+  color: var(--color-muted);
+  margin: 0 0 28px;
+  text-align: center;
 }
 
 .document-actions {

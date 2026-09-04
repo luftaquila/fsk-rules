@@ -94,7 +94,10 @@ def render_home(catalog: dict) -> str:
     <h3>{html.escape(entry['short_title'])}</h3>
     <p>{html.escape(entry['title'])}</p>
   </div>
-  <time datetime="{html.escape(entry['effective_date'])}">시행 {html.escape(entry['effective_date'])}</time>
+  <div class="document-release">
+    <strong>{html.escape(document_version(entry))}</strong>
+    <time datetime="{html.escape(entry['effective_date'])}">시행 {html.escape(entry['effective_date'])}</time>
+  </div>
   <div class="document-actions">
     <a href="{html.escape(entry['source']['post_url'])}" target="_blank" rel="noopener noreferrer">원문</a>
     <a href="{base}/">웹</a>
@@ -173,6 +176,7 @@ def build(args: argparse.Namespace) -> None:
                 input=ROOT / entry["tex"],
                 output=destination / "index.html",
                 edition=entry["edition"],
+                version=document_version(entry),
                 document=entry["document"],
                 title=entry["title"],
                 pdf_filename=entry["pdf_filename"],

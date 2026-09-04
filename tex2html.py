@@ -626,19 +626,20 @@ def render_document(
     soup: BeautifulSoup,
     title: str,
     edition: int,
+    version: str,
     document: str,
     pdf_filename: str,
 ) -> str:
     config = json.dumps(
-        {"edition": edition, "document": document, "pdf": pdf_filename}, ensure_ascii=False
+        {"edition": edition, "version": version, "document": document, "pdf": pdf_filename}, ensure_ascii=False
     ).replace("</", "<\\/")
     return f"""<!doctype html>
 <html lang="ko">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="{html.escape(title)} {edition} 웹 규정집">
-  <title>{html.escape(str(edition))} {html.escape(title)}</title>
+  <meta name="description" content="{html.escape(title)} {html.escape(version)} 웹 규정집">
+  <title>{html.escape(version)} {html.escape(title)}</title>
   <link rel="stylesheet" href="../../style.css">
   <script defer src="../../viewer.js"></script>
 </head>
@@ -663,6 +664,7 @@ def render_document(
     <nav>{toc_html(soup)}</nav>
   </aside>
   <main id="rules-content" class="rules-content">
+    <p class="reader-version" aria-label="문서 버전">{html.escape(version)}</p>
     {str(soup)}
   </main>
   <button id="back-to-position" class="back-position" type="button" hidden>이전 위치</button>
@@ -688,6 +690,8 @@ def convert(args: argparse.Namespace) -> None:
     input_path = args.input.resolve()
     entry = catalog_entry_for(input_path) or {}
     edition = args.edition or entry.get("edition")
+    revision = entry.get("revision")
+    version = getattr(args, "version", None) or (f"{edition}-v{revision}" if revision else str(edition))
     document = args.document or entry.get("document")
     title = args.title or entry.get("title") or input_path.stem
     pdf_filename = args.pdf_filename or entry.get("pdf_filename") or f"{input_path.stem}.pdf"
@@ -714,7 +718,7 @@ def convert(args: argparse.Namespace) -> None:
     apply_figure_widths(soup, source)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(
-        render_document(soup, title, int(edition), document, pdf_filename), encoding="utf-8"
+        render_document(soup, title, int(edition), version, document, pdf_filename), encoding="utf-8"
     )
     index_path = args.index_output or args.output.with_name("rules-index.json")
     index_path.write_text(
@@ -733,6 +737,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("input", type=Path)
     parser.add_argument("output", type=Path)
     parser.add_argument("--edition", type=int)
+    parser.add_argument("--version")
     parser.add_argument("--document")
     parser.add_argument("--title")
     parser.add_argument("--pdf-filename")
