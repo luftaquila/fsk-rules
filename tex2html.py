@@ -294,6 +294,15 @@ def normalize_text(value: str) -> str:
     return re.sub(r"\s+", " ", unicodedata.normalize("NFC", value)).strip()
 
 
+def display_node_text(element: Tag) -> str:
+    clone = copy.copy(element)
+    for annotation in clone.select("math annotation, math annotation-xml"):
+        annotation.decompose()
+    for math in clone.find_all("math"):
+        math.replace_with(math.get_text("", strip=True))
+    return normalize_text(clone.get_text(" ", strip=True))
+
+
 def canonical_node_text(element: Tag) -> str:
     clone = copy.copy(element)
     for button in clone.select("button.anchor-copy"):
@@ -305,7 +314,7 @@ def canonical_node_text(element: Tag) -> str:
 
 
 def canonical_content(element: Tag, asset_dir: Path | None = None) -> tuple[str, str]:
-    text = normalize_text(element.get_text(" ", strip=True))
+    text = display_node_text(element)
     canonical_text = canonical_node_text(element)
     image_parts: list[str] = []
     if asset_dir:
@@ -330,7 +339,7 @@ def canonical_article(heading: Tag, asset_dir: Path | None = None) -> tuple[str,
             break
         if isinstance(sibling, Tag):
             nodes.append(sibling)
-    text = normalize_text(" ".join(node.get_text(" ", strip=True) for node in nodes))
+    text = normalize_text(" ".join(display_node_text(node) for node in nodes))
     text_parts: list[str] = []
     for node in nodes:
         if str(node.get("id", "")).startswith(RULE_KEY_ANCHOR_PREFIX):

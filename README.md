@@ -74,7 +74,7 @@ PDF 도구가 없는 환경에서는 `make site-without-pdf`로 HTML과 JSON 계
 }
 ```
 
-`rule_key`는 번호와 독립적인 영구 식별자입니다. 다음 연도에 조항 번호가 바뀌어도 같은 `rule_key`로 새 `id`, `citation`, `href`를 찾을 수 있습니다. `content_hash`는 내용 변경 여부를 판별합니다. URL은 매니페스트의 검증된 문서 경로와 인덱스의 `href`를 결합해 만들며 임의의 전체 URL을 데이터베이스에 저장하지 않습니다. 인덱스에 들어가는 모든 조항은 LaTeX에 `\label{rule:formula-technical.brake-light}` 형식의 영구 키를 갖습니다. 조항을 추가하면 키도 함께 추가하고, 한 번 Release된 키는 이름을 바꾸지 않습니다. 키 작성 규칙과 폐기 절차는 [연동 가이드](docs/rule-refs.md)를 따릅니다.
+`rule_key`는 번호와 독립적인 영구 식별자입니다. 다음 연도에 조항 번호가 바뀌어도 같은 `rule_key`로 새 `id`, `citation`, `href`를 찾을 수 있습니다. `text`는 MathML의 화면 표현에서 만든 검색용 평문이며 LaTeX annotation을 포함하지 않습니다. `content_hash`는 내용 변경 여부를 판별합니다. URL은 매니페스트의 검증된 문서 경로와 인덱스의 `href`를 결합해 만들며 임의의 전체 URL을 데이터베이스에 저장하지 않습니다. 인덱스에 들어가는 모든 조항은 LaTeX에 `\label{rule:formula-technical.brake-light}` 형식의 영구 키를 갖습니다. 조항을 추가하면 키도 함께 추가하고, 한 번 Release된 키는 이름을 바꾸지 않습니다. 키 작성 규칙과 폐기 절차는 [연동 가이드](docs/rule-refs.md)를 따릅니다.
 
 소비자 측 `sheet_template.rule_refs` 계약과 다음 연도 승계 규칙은 [연동 가이드](docs/rule-refs.md)에 정리되어 있습니다.
 
