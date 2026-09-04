@@ -13,7 +13,7 @@
       "clause_id": "formula-technical-10-9",
       "citation": "제10조 9항",
       "source_hash": "sha256:...",
-      "release_tag": "formula-technical-2026-r2"
+      "release_tag": "formula-technical-2026-v2"
     }
   ]
 }

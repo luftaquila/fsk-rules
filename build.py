@@ -148,7 +148,7 @@ def build(args: argparse.Namespace) -> None:
     catalog = load_catalog()
     source_commit = args.source_commit or git_head(ROOT)
     validate_source_commit(source_commit)
-    if args.site_tag is not None and not re.fullmatch(r"site-\d{8}\.[1-9]\d*", args.site_tag):
+    if args.site_tag is not None and not re.fullmatch(r"site-\d{8}-v[1-9]\d*", args.site_tag):
         raise ValueError("site tag 형식이 올바르지 않습니다.")
     output = args.output.resolve()
     if output in {Path("/"), Path.home().resolve(), ROOT}:
@@ -232,7 +232,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--skip-pdf", action="store_true", help="이미 컴파일된 PDF를 사용")
     parser.add_argument("--allow-missing-pdf", action="store_true", help="HTML 검증용으로 PDF 없이 빌드")
     parser.add_argument("--source-commit", help="manifest에 기록할 40자리 Git commit SHA")
-    parser.add_argument("--site-tag", help="승인된 운영 배포 태그(site-YYYYMMDD.N)")
+    parser.add_argument("--site-tag", help="승인된 운영 배포 태그(site-YYYYMMDD-vN)")
     return parser.parse_args()
 
 

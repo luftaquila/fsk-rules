@@ -102,8 +102,8 @@ def built_manifest(catalog: dict, root: Path, site_tag: str | None) -> dict:
                 "edition": entry["edition"],
                 "document": entry["document"],
                 "revision": entry["revision"],
-                "version": f'{entry["edition"]}-r{entry["revision"]}',
-                "release_tag": f'{entry["document"]}-{entry["edition"]}-r{entry["revision"]}',
+                "version": f'{entry["edition"]}-v{entry["revision"]}',
+                "release_tag": f'{entry["document"]}-{entry["edition"]}-v{entry["revision"]}',
                 "document_digest": document_digest(entry, root),
             }
         )
@@ -135,22 +135,33 @@ class CatalogContractTests(unittest.TestCase):
             validate_catalog(catalog)
 
     def test_document_and_site_tags_are_strict(self):
-        self.assertEqual(parse_document_tag("formula-technical-2026-r12"), ("formula-technical", 2026, 12))
-        self.assertEqual(parse_site_tag("site-20260903.2"), ("20260903", 2))
-        for invalid in ("formula-technical-2026-r0", "technical-2026-r1", "formula-technical-26-r1"):
+        self.assertEqual(parse_document_tag("formula-technical-2026-v12"), ("formula-technical", 2026, 12))
+        self.assertEqual(parse_site_tag("site-20260903-v2"), ("20260903", 2))
+        for invalid in (
+            "formula-technical-2026-v0",
+            "formula-technical-2026-r1",
+            "technical-2026-v1",
+            "formula-technical-26-v1",
+        ):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                 parse_document_tag(invalid)
-        for invalid in ("site-20260903.0", "site-2026-09-03.1", "site-20261340.1", "20260903.1"):
+        for invalid in (
+            "site-20260903-v0",
+            "site-20260903.1",
+            "site-2026-09-03-v1",
+            "site-20261340-v1",
+            "20260903-v1",
+        ):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                 parse_site_tag(invalid)
 
     def test_site_tags_are_monotonic_and_daily_sequences_are_contiguous(self):
-        validate_site_tag_sequence("site-20260903.2", ["site-20260903.1", "2026"])
-        validate_site_tag_sequence("site-20260904.1", ["site-20260903.1", "site-20260903.2"])
+        validate_site_tag_sequence("site-20260903-v2", ["site-20260903-v1", "2026"])
+        validate_site_tag_sequence("site-20260904-v1", ["site-20260903-v1", "site-20260903-v2"])
         with self.assertRaises(ValueError):
-            validate_site_tag_sequence("site-20260902.1", ["site-20260903.1"])
+            validate_site_tag_sequence("site-20260902-v1", ["site-20260903-v1"])
         with self.assertRaises(ValueError):
-            validate_site_tag_sequence("site-20260903.3", ["site-20260903.1"])
+            validate_site_tag_sequence("site-20260903-v3", ["site-20260903-v1"])
 
 
 class RevisionTests(unittest.TestCase):
@@ -179,7 +190,7 @@ class RevisionTests(unittest.TestCase):
         }
         old_digest = "sha256:" + "1" * 64
         new_digest = "sha256:" + "2" * 64
-        tag = "formula-technical-2026-r1"
+        tag = "formula-technical-2026-v1"
         manifests = {
             tag: {
                 "schema_version": 1,
@@ -205,7 +216,7 @@ class RevisionTests(unittest.TestCase):
 
         with patch("scripts.release_contract.document_digest", return_value=new_digest):
             with self.assertRaisesRegex(ValueError, "연속적이지"):
-                version_state(catalog, [tag, "formula-technical-2026-r3"], manifests)
+                version_state(catalog, [tag, "formula-technical-2026-v3"], manifests)
 
 
 class RuleKeyContinuityTests(unittest.TestCase):
@@ -275,7 +286,7 @@ class PackagingTests(unittest.TestCase):
                 json.dumps(built_manifest(catalog, source, None)), encoding="utf-8"
             )
 
-            tag = "formula-technical-2026-r1"
+            tag = "formula-technical-2026-v1"
             artifacts = package_document(site, output, tag, SOURCE_COMMIT, source)
             self.assertEqual(len(artifacts), 5)
             release = json.loads((output / f"{tag}-release.json").read_text(encoding="utf-8"))
@@ -310,11 +321,11 @@ class PackagingTests(unittest.TestCase):
             extracted = workspace / "extracted"
             catalog = make_source_root(source)
             site.mkdir()
-            manifest = built_manifest(catalog, source, "site-20260903.1")
+            manifest = built_manifest(catalog, source, "site-20260903-v1")
             (site / "rules-manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
             (site / "index.html").write_text("published", encoding="utf-8")
 
-            tag = "site-20260903.1"
+            tag = "site-20260903-v1"
             package_site(site, output, tag, SOURCE_COMMIT, source)
             release = json.loads((output / f"{tag}-release.json").read_text(encoding="utf-8"))
             Draft202012Validator(self.load_schema("site-release.schema.json")).validate(release)

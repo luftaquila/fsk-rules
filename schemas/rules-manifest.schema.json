@@ -16,7 +16,7 @@
         "site_tag": {
           "oneOf": [
             { "type": "null" },
-            { "type": "string", "pattern": "^site-[0-9]{8}\\.[1-9][0-9]*$" }
+            { "type": "string", "pattern": "^site-[0-9]{8}-v[1-9][0-9]*$" }
           ]
         },
         "source_commit": { "type": "string", "pattern": "^[a-f0-9]{40}$" }
@@ -32,8 +32,8 @@
         "properties": {
           "edition": { "type": "integer", "minimum": 2000 },
           "revision": { "type": "integer", "minimum": 1 },
-          "version": { "type": "string", "pattern": "^[0-9]{4}-r[1-9][0-9]*$" },
-          "release_tag": { "type": "string", "pattern": "^formula-(technical|competition)-[0-9]{4}-r[1-9][0-9]*$" },
+          "version": { "type": "string", "pattern": "^[0-9]{4}-v[1-9][0-9]*$" },
+          "release_tag": { "type": "string", "pattern": "^formula-(technical|competition)-[0-9]{4}-v[1-9][0-9]*$" },
           "document_digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
           "document": { "enum": ["formula-technical", "formula-competition"] },
           "title": { "type": "string" },

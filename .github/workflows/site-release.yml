@@ -2,7 +2,7 @@ name: Release and deploy site
 
 on:
   push:
-    tags: ["site-*"]
+    tags: ["site-*-v*"]
   workflow_dispatch:
     inputs:
       rollback_tag:

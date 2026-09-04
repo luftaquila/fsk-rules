@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate document versions and package immutable release artifacts."""
+"""Validate document versions and package release artifacts."""
 
 from __future__ import annotations
 
@@ -17,8 +17,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DOCUMENTS = ("formula-technical", "formula-competition")
-DOCUMENT_TAG = re.compile(r"^(formula-technical|formula-competition)-(\d{4})-r([1-9]\d*)$")
-SITE_TAG = re.compile(r"^site-(\d{8})\.([1-9]\d*)$")
+DOCUMENT_TAG = re.compile(r"^(formula-technical|formula-competition)-(\d{4})-v([1-9]\d*)$")
+SITE_TAG = re.compile(r"^site-(\d{8})-v([1-9]\d*)$")
 HASH_PATTERN = re.compile(r"^sha256:[a-f0-9]{64}$")
 COMMIT_PATTERN = re.compile(r"^[a-f0-9]{40}$")
 RULE_KEY_PATTERN = re.compile(r"^formula-(technical|competition)\.[a-z0-9]+([.-][a-z0-9]+)*$")
@@ -77,7 +77,7 @@ def validate_source_commit(source_commit: str) -> None:
 
 
 def document_version(entry: dict) -> str:
-    return f'{entry["edition"]}-r{entry["revision"]}'
+    return f'{entry["edition"]}-v{entry["revision"]}'
 
 
 def document_tag(entry: dict) -> str:
@@ -234,7 +234,7 @@ def document_release_digest(manifest: dict, tag: str) -> str:
 def version_state(catalog: dict, tags: list[str], manifests: dict[str, dict], root: Path = ROOT) -> list[dict]:
     results = []
     for entry in catalog["documents"]:
-        prefix = f'{entry["document"]}-{entry["edition"]}-r'
+        prefix = f'{entry["document"]}-{entry["edition"]}-v'
         released = sorted(
             (int(tag.removeprefix(prefix)), tag)
             for tag in tags
@@ -409,7 +409,7 @@ def command_check_catalog(args) -> None:
         if state["state"] != "candidate":
             continue
         entry = catalog_entry(catalog, state["document"], state["edition"])
-        previous_tag = f'{entry["document"]}-{entry["edition"]}-r{entry["revision"] - 1}'
+        previous_tag = f'{entry["document"]}-{entry["edition"]}-v{entry["revision"] - 1}'
         current_path = args.site / str(entry["edition"]) / entry["document"] / "rules-index.json"
         if not current_path.is_file():
             raise FileNotFoundError(f"빌드된 rules-index.json이 없습니다: {current_path}")
@@ -427,7 +427,7 @@ def command_check_tag(args) -> None:
     entry = catalog_entry(load_catalog(args.root), document, edition)
     if revision != entry["revision"] or args.tag != document_tag(entry):
         raise ValueError("태그와 catalog revision이 일치하지 않습니다.")
-    prefix = f"{document}-{edition}-r"
+    prefix = f"{document}-{edition}-v"
     revisions = sorted(
         int(tag.removeprefix(prefix))
         for tag in git_tags(args.root)
