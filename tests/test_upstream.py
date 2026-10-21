@@ -1,6 +1,8 @@
 import unittest
+import urllib.error
+from unittest import mock
 
-from scripts.check_upstream import classify_title, parse_board_page, validate_download_url
+from scripts.check_upstream import FETCH_ATTEMPTS, classify_title, fetch, parse_board_page, validate_download_url
 
 
 class UpstreamParserTests(unittest.TestCase):
@@ -36,6 +38,42 @@ class UpstreamParserTests(unittest.TestCase):
         validate_download_url("https://www.ksae.org/jajak/func/download.php?path=abc")
         with self.assertRaises(ValueError):
             validate_download_url("https://example.com/jajak/func/download.php?path=abc")
+
+
+@mock.patch("scripts.check_upstream.time.sleep")
+class UpstreamFetchRetryTests(unittest.TestCase):
+    url = "https://www.ksae.org/jajak/bbs/?code=J_rule"
+
+    def test_retries_transient_network_errors(self, sleep):
+        handshake = urllib.error.URLError(TimeoutError("The handshake operation timed out"))
+        with mock.patch("scripts.check_upstream.fetch_once", side_effect=[handshake, TimeoutError(), b"ok"]) as fetch_once:
+            self.assertEqual(fetch(self.url), b"ok")
+        self.assertEqual(fetch_once.call_count, 3)
+        self.assertEqual([call.args[0] for call in sleep.call_args_list], [5, 10])
+
+    def test_retries_server_errors(self, sleep):
+        unavailable = urllib.error.HTTPError(self.url, 503, "Service Unavailable", None, None)
+        self.addCleanup(unavailable.close)
+        with mock.patch("scripts.check_upstream.fetch_once", side_effect=[unavailable, b"ok"]):
+            self.assertEqual(fetch(self.url), b"ok")
+
+    def test_gives_up_after_final_attempt(self, sleep):
+        with mock.patch("scripts.check_upstream.fetch_once", side_effect=TimeoutError()) as fetch_once:
+            with self.assertRaises(TimeoutError):
+                fetch(self.url)
+        self.assertEqual(fetch_once.call_count, FETCH_ATTEMPTS)
+        self.assertEqual(sleep.call_count, FETCH_ATTEMPTS - 1)
+
+    def test_does_not_retry_permanent_errors(self, sleep):
+        not_found = urllib.error.HTTPError(self.url, 404, "Not Found", None, None)
+        self.addCleanup(not_found.close)
+        redirected = ValueError("공식 호스트 밖으로 리디렉션되었습니다")
+        for error in (not_found, redirected):
+            with mock.patch("scripts.check_upstream.fetch_once", side_effect=error) as fetch_once:
+                with self.assertRaises(type(error)):
+                    fetch(self.url)
+            self.assertEqual(fetch_once.call_count, 1)
+        sleep.assert_not_called()
 
 
 if __name__ == "__main__":
