@@ -8,6 +8,8 @@ import hashlib
 import json
 import re
 import sys
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
@@ -20,9 +22,31 @@ ROOT = Path(__file__).resolve().parents[1]
 BOARD_URL = "https://www.ksae.org/jajak/bbs/?code=J_rule"
 MAX_PDF_BYTES = 20 * 1024 * 1024
 USER_AGENT = "fsk-rules-upstream-check/1.0 (+https://github.com/luftaquila/fsk-rules)"
+FETCH_ATTEMPTS = 3
+RETRY_BASE_DELAY = 5
 
 
-def fetch(url: str, timeout: int = 30) -> bytes:
+def is_transient(error: Exception) -> bool:
+    if isinstance(error, urllib.error.HTTPError):
+        return error.code == 429 or error.code >= 500
+    return isinstance(error, (urllib.error.URLError, TimeoutError, ConnectionError))
+
+
+def fetch(url: str, timeout: int = 30, attempts: int = FETCH_ATTEMPTS) -> bytes:
+    attempt = 1
+    while True:
+        try:
+            return fetch_once(url, timeout)
+        except Exception as error:
+            if attempt >= attempts or not is_transient(error):
+                raise
+            delay = RETRY_BASE_DELAY * 2 ** (attempt - 1)
+            print(f"요청 실패 ({attempt}/{attempts}), {delay}초 후 재시도: {url}: {type(error).__name__}: {error}", file=sys.stderr)
+            time.sleep(delay)
+            attempt += 1
+
+
+def fetch_once(url: str, timeout: int) -> bytes:
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     with urllib.request.urlopen(request, timeout=timeout) as response:
         final = urllib.parse.urlparse(response.geturl())
